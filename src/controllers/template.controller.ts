@@ -116,6 +116,19 @@ export const deleteTemplate = async (req: Request, res: Response) => {
   }
 };
 
+export const deleteAllTemplates = async (req: Request, res: Response) => {
+  try {
+    const result = await AppraisalTemplate.deleteMany({});
+    res.status(200).json({ 
+      message: 'All templates deleted successfully', 
+      deletedCount: result.deletedCount 
+    });
+  } catch (error) {
+    console.error('Error deleting all templates:', error);
+    res.status(500).json({ message: 'Error deleting all templates' });
+  }
+};
+
 // Assign template to users (convenience endpoint)
 export const assignTemplate = async (req: Request, res: Response) => {
   try {
@@ -157,138 +170,42 @@ export const approveTemplate = async (req: AuthRequest, res: Response) => {
     }
     console.log('Template approved:', template.name);
 
-    // Auto-create appraisals for eligible staff
-    // 1. Get Active Period
-    console.log('Finding active period...');
-    let period = await AppraisalPeriod.findOne({ status: 'active' });
-    if (!period) {
-      console.log('No active period found, checking for any period...');
-      // Fallback: Find any period or create default
-      period = await AppraisalPeriod.findOne().sort({ createdAt: -1 });
-      if (!period) {
-        console.log('No periods exist, creating default...');
-        period = await AppraisalPeriod.create({
-          name: `Period ${new Date().getFullYear()}`,
-          startDate: new Date(),
-          endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)),
-          status: 'active',
-          createdBy: req.user?._id
-        });
-      }
-    }
-    console.log('Using period:', period.name);
-
-    // 2. Get Default Workflow
-    console.log('Finding default workflow...');
-    let workflow = await AppraisalFlow.findOne({ isDefault: true });
-    if (!workflow) {
-      console.log('No default workflow, checking for any...');
-      workflow = await AppraisalFlow.findOne();
-      if (!workflow) {
-        console.log('No workflows exist, creating default...');
-        // Create a default workflow if none exists
-        workflow = await AppraisalFlow.create({
-          name: 'Standard Appraisal Flow',
-          isDefault: true,
-          createdBy: req.user?._id,
-          steps: [
-            { name: 'Self Appraisal', rank: 1, assignedRole: 'employee', isRequired: true, dueInDays: 7 },
-            { name: 'Manager Review', rank: 2, assignedRole: 'supervisor', isRequired: true, dueInDays: 7 }
-          ]
-        });
-      }
-    }
-    console.log('Using workflow:', workflow.name);
-
-    // 3. Get Eligible Staff (Reuse logic)
-    console.log('Finding eligible staff...');
-    const query: any = { role: 'employee' };
-    if (template.assignedUsers && template.assignedUsers.length > 0) {
-      console.log('Using explicit assigned users:', template.assignedUsers.length);
-      query._id = { $in: template.assignedUsers };
-    } else {
-      const conditions: any[] = [];
-      if (template.applicableDepartments && template.applicableDepartments.length > 0) {
-        conditions.push({ department: { $in: template.applicableDepartments } });
-      }
-      if (template.applicableGrades && template.applicableGrades.length > 0) {
-        conditions.push({ grade: { $in: template.applicableGrades } });
-      }
-      if (conditions.length > 0) {
-        query.$or = conditions;
-      }
-      console.log('Using conditions:', JSON.stringify(conditions));
-    }
-    
-    const staffList = await User.find(query);
-    console.log(`Found ${staffList.length} eligible staff members`);
-    
-    // 4. Create Appraisals
-    let createdCount = 0;
-    for (const employee of staffList) {
-      // Check if exists
-      const exists = await Appraisal.findOne({
-        employee: employee._id,
-        template: template._id,
-        period: period.name // Using name as period string in Appraisal model
-      });
-
-      if (!exists) {
-        console.log(`Creating appraisal for ${employee.firstName} ${employee.lastName}`);
-        
-        // Resolve step assignments
-        const stepAssignments = workflow.steps.map((step: any) => {
-          let assignedUser = null;
-          
-          if (step.assignedRole === 'employee') {
-            assignedUser = employee._id;
-          } else if (step.assignedRole === 'supervisor') {
-            assignedUser = employee.supervisor;
-          }
-          // Add other role resolutions here (e.g. HOD) if available in User model
-          
-          return {
-            stepId: step._id || step.id, // Ensure we capture the step ID
-            assignedUser: assignedUser,
-            status: 'pending'
-          };
-        });
-
-        await Appraisal.create({
-          employee: employee._id,
-          template: template._id,
-          workflow: workflow._id,
-          period: period.name,
-          status: 'setup',
-          currentStep: 0,
-          stepAssignments,
-          reviews: [], // Initialize empty reviews
-          history: [{
-            action: 'initiated',
-            actor: req.user?._id,
-            timestamp: new Date(),
-            comment: 'Auto-initiated upon template approval'
-          }]
-        });
-        createdCount++;
-      } else {
-        console.log(`Appraisal already exists for ${employee.firstName} ${employee.lastName}`);
-      }
-    }
-
-    console.log(`Total appraisals created: ${createdCount}`);
-    
     // Return the template object with an added message field
-    // Use toJSON() to ensure populated fields are preserved
     const responseObj = {
       ...template.toJSON(),
-      message: `Template approved and ${createdCount} appraisals initiated`
+      message: `Template approved successfully. You can now initiate appraisals.`
     };
     
     res.json(responseObj);
   } catch (error) {
     console.error('Error approving template:', error);
     res.status(500).json({ message: 'Error approving template', error });
+  }
+};
+
+// Reject template (HR Admin only)
+export const rejectTemplate = async (req: AuthRequest, res: Response) => {
+  try {
+    console.log('Reject Template called for ID:', req.params.id);
+    const template = await AppraisalTemplate.findByIdAndUpdate(
+      req.params.id,
+      { status: 'rejected' },
+      { new: true }
+    );
+
+    if (!template) {
+      console.log('Template not found');
+      return res.status(404).json({ message: 'Template not found' });
+    }
+    console.log('Template rejected:', template.name);
+
+    res.json({
+      ...template.toJSON(),
+      message: 'Template rejected successfully'
+    });
+  } catch (error) {
+    console.error('Error rejecting template:', error);
+    res.status(500).json({ message: 'Error rejecting template', error });
   }
 };
 

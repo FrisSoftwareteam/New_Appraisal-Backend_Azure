@@ -93,6 +93,19 @@ export const deleteWorkflow = async (req: Request, res: Response) => {
   }
 };
 
+export const deleteAllWorkflows = async (req: Request, res: Response) => {
+  try {
+    const result = await AppraisalFlow.deleteMany({});
+    res.status(200).json({ 
+      message: 'All workflows deleted successfully', 
+      deletedCount: result.deletedCount 
+    });
+  } catch (error) {
+    console.error('Error deleting all workflows:', error);
+    res.status(500).json({ message: 'Error deleting all workflows' });
+  }
+};
+
 // Duplicate workflow
 export const duplicateWorkflow = async (req: Request, res: Response) => {
   try {

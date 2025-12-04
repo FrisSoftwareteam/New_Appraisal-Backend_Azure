@@ -1,18 +1,31 @@
 import express from 'express';
-import * as periodController from '../controllers/period.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import {
+  createPeriod,
+  getPeriods,
+  getPeriodById,
+  updatePeriod,
+  deletePeriod,
+  getAssignedStaff,
+  assignStaff,
+  removeStaff,
+  deleteAllPeriods
+} from '../controllers/period.controller';
+import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
-router.post('/', authenticate, authorize(['system_admin', 'hr_admin']), periodController.createPeriod);
-router.get('/', authenticate, periodController.getPeriods);
-router.get('/:id', authenticate, periodController.getPeriodById);
-router.patch('/:id', authenticate, authorize(['system_admin', 'hr_admin']), periodController.updatePeriod);
-router.delete('/:id', authenticate, authorize(['system_admin', 'hr_admin']), periodController.deletePeriod);
+// Bulk actions - Must be defined BEFORE /:id routes
+router.delete('/all', authenticate, requirePermission('systemSettings'), deleteAllPeriods);
+
+router.post('/', authenticate, requirePermission('systemSettings'), createPeriod);
+router.get('/', authenticate, getPeriods);
+router.get('/:id', authenticate, getPeriodById);
+router.patch('/:id', authenticate, requirePermission('systemSettings'), updatePeriod);
+router.delete('/:id', authenticate, requirePermission('systemSettings'), deletePeriod);
 
 // Staff management routes
-router.get('/:id/staff', authenticate, periodController.getAssignedStaff);
-router.post('/:id/staff', authenticate, authorize(['system_admin', 'hr_admin']), periodController.assignStaff);
-router.delete('/:id/staff/:employeeId', authenticate, authorize(['system_admin', 'hr_admin']), periodController.removeStaff);
+router.get('/:id/staff', authenticate, getAssignedStaff);
+router.post('/:id/staff', authenticate, requirePermission('systemSettings'), assignStaff);
+router.delete('/:id/staff/:employeeId', authenticate, requirePermission('systemSettings'), removeStaff);
 
 export default router;
