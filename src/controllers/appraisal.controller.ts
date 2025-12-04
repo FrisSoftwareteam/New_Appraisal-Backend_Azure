@@ -2,7 +2,9 @@ import { Request, Response } from 'express';
 import Appraisal from '../models/Appraisal';
 import AppraisalTemplate from '../models/AppraisalTemplate';
 import AppraisalFlow from '../models/AppraisalFlow';
+import AppraisalPeriod from '../models/AppraisalPeriod';
 import User from '../models/User';
+import PeriodStaffAssignment from '../models/PeriodStaffAssignment';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // Initiate an appraisal for an employee
@@ -74,6 +76,24 @@ export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
     });
 
     await appraisal.save();
+    
+    // Update PeriodStaffAssignment to mark as initialized
+    // Find the period by name to get its ObjectId
+    const periodDoc = await AppraisalPeriod.findOne({ name: period });
+    if (periodDoc) {
+      await PeriodStaffAssignment.updateOne(
+        { 
+          employee: employeeId,
+          period: periodDoc._id
+        },
+        { 
+          isInitialized: true,
+          workflow: workflowId,
+          template: templateId
+        }
+      );
+    }
+    
     res.status(201).json(appraisal);
   } catch (error) {
     console.error('Error initiating appraisal:', error);
@@ -435,3 +455,16 @@ export const getAssignedAppraisals = async (req: AuthRequest, res: Response) => 
   }
 };
 
+// Delete All Appraisals (Admin Cleanup)
+export const deleteAllAppraisals = async (req: Request, res: Response) => {
+  try {
+    const result = await Appraisal.deleteMany({});
+    res.status(200).json({ 
+      message: 'All appraisals deleted successfully', 
+      deletedCount: result.deletedCount 
+    });
+  } catch (error) {
+    console.error('Error deleting all appraisals:', error);
+    res.status(500).json({ message: 'Error deleting all appraisals' });
+  }
+};

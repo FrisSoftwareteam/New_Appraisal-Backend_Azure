@@ -6,21 +6,25 @@ import {
   updateWorkflow, 
   deleteWorkflow,
   duplicateWorkflow,
-  setDefaultWorkflow
+  setDefaultWorkflow,
+  deleteAllWorkflows
 } from '../controllers/workflow.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
+
+// Bulk actions - Must be defined BEFORE /:id routes
+router.delete('/all', authenticate, requirePermission('systemSettings'), deleteAllWorkflows);
 
 // Public routes (authenticated)
 router.get('/', authenticate, getAllWorkflows);
 router.get('/:id', authenticate, getWorkflowById);
 
 // Admin only routes
-router.post('/', authenticate, authorize(['super_admin', 'hr_admin']), createWorkflow);
-router.patch('/:id', authenticate, authorize(['super_admin', 'hr_admin']), updateWorkflow);
-router.delete('/:id', authenticate, authorize(['super_admin', 'hr_admin']), deleteWorkflow);
-router.post('/:id/duplicate', authenticate, authorize(['super_admin', 'hr_admin']), duplicateWorkflow);
-router.post('/:id/default', authenticate, authorize(['super_admin', 'hr_admin']), setDefaultWorkflow);
+router.post('/', authenticate, requirePermission('systemSettings'), createWorkflow);
+router.patch('/:id', authenticate, requirePermission('systemSettings'), updateWorkflow);
+router.delete('/:id', authenticate, requirePermission('systemSettings'), deleteWorkflow);
+router.post('/:id/duplicate', authenticate, requirePermission('systemSettings'), duplicateWorkflow);
+router.post('/:id/default', authenticate, requirePermission('systemSettings'), setDefaultWorkflow);
 
 export default router;

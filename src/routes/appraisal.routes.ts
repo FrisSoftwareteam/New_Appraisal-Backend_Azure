@@ -8,26 +8,30 @@ import {
   getMyAppraisals, 
   getPendingAppraisals,
   getAssignedAppraisals,
-  getAllAppraisals
+  getAllAppraisals,
+  deleteAllAppraisals
 } from '../controllers/appraisal.controller';
 import { getAssignments, updateAssignments } from '../controllers/appraisal-assignment.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
 // Base route: /api/appraisals
 
 // Initiate (Admin/HR only)
-router.post('/initiate', authenticate, authorize(['super_admin', 'hr_admin']), initiateAppraisal);
+router.post('/initiate', authenticate, requirePermission('createAppraisals'), initiateAppraisal);
+
+// Delete All (Super Admin only - Cleanup)
+router.delete('/delete-all', authenticate, requirePermission('manageSystem'), deleteAllAppraisals);
 
 // Get All (Admin/HR only)
-router.get('/', authenticate, authorize(['super_admin', 'hr_admin']), getAllAppraisals);
+router.get('/', authenticate, requirePermission('viewAppraisals'), getAllAppraisals);
 
 // Get assignments
 router.get('/:id/assignments', authenticate, getAssignments);
 
 // Update assignments
-router.put('/:id/assignments', authenticate, authorize(['super_admin', 'hr_admin']), updateAssignments);
+router.put('/:id/assignments', authenticate, requirePermission('createAppraisals'), updateAssignments);
 
 // My Appraisals (Employee)
 router.get('/my-appraisals', authenticate, getMyAppraisals);

@@ -7,22 +7,28 @@ import {
   deleteTemplate,
   assignTemplate,
   approveTemplate,
-  getEligibleStaffForTemplate
+  getEligibleStaffForTemplate,
+  deleteAllTemplates,
+  rejectTemplate
 } from '../controllers/template.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
+
+// Bulk actions - Must be defined BEFORE /:id routes
+router.delete('/all', authenticate, requirePermission('manageTemplates'), deleteAllTemplates);
 
 // Public routes (authenticated)
 router.get('/', authenticate, getAllTemplates);
 router.get('/:id', authenticate, getTemplateById);
 
 // Admin only routes
-router.post('/', authenticate, authorize(['super_admin', 'hr_admin']), createTemplate);
-router.patch('/:id', authenticate, authorize(['super_admin', 'hr_admin']), updateTemplate);
-router.delete('/:id', authenticate, authorize(['super_admin', 'hr_admin']), deleteTemplate);
-router.post('/:id/assign', authenticate, authorize(['super_admin', 'hr_admin']), assignTemplate);
-router.post('/:id/approve', authenticate, authorize(['super_admin', 'hr_admin']), approveTemplate);
-router.get('/:id/eligible-staff', authenticate, authorize(['super_admin', 'hr_admin']), getEligibleStaffForTemplate);
+router.post('/', authenticate, requirePermission('manageTemplates'), createTemplate);
+router.patch('/:id', authenticate, requirePermission('manageTemplates'), updateTemplate);
+router.delete('/:id', authenticate, requirePermission('manageTemplates'), deleteTemplate);
+router.post('/:id/assign', authenticate, requirePermission('manageTemplates'), assignTemplate);
+router.post('/:id/approve', authenticate, requirePermission('manageTemplates'), approveTemplate);
+router.post('/:id/reject', authenticate, requirePermission('manageTemplates'), rejectTemplate);
+router.get('/:id/eligible-staff', authenticate, requirePermission('manageTemplates'), getEligibleStaffForTemplate);
 
 export default router;

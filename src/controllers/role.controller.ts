@@ -38,11 +38,25 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
 export const seedRoles = async () => {
   const defaultRoles = [
     {
-      name: "System Admin",
+      name: "Super Admin",
       slug: "super_admin",
       accessLevel: 10,
       description: "Full system access",
       permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: true }
+    },
+    {
+      name: "COO",
+      slug: "coo",
+      accessLevel: 9,
+      description: "Chief Operating Officer access",
+      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
+    },
+    {
+      name: "Appraisal Committee",
+      slug: "appraisal_committee",
+      accessLevel: 8,
+      description: "Appraisal committee member access",
+      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: false, systemSettings: false }
     },
     {
       name: "HR Admin",
@@ -50,13 +64,6 @@ export const seedRoles = async () => {
       accessLevel: 7,
       description: "HR management access",
       permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
-    },
-    {
-      name: "HR Officer",
-      slug: "hr_officer",
-      accessLevel: 4,
-      description: "HR operational access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
     },
     {
       name: "Division Head",
@@ -73,9 +80,23 @@ export const seedRoles = async () => {
       permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
     },
     {
+      name: "HR Officer",
+      slug: "hr_officer",
+      accessLevel: 4,
+      description: "HR operational access",
+      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
+    },
+    {
+      name: "Unit Head",
+      slug: "unit_head",
+      accessLevel: 3,
+      description: "Unit level management",
+      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
+    },
+    {
       name: "Supervisor",
       slug: "supervisor",
-      accessLevel: 3,
+      accessLevel: 2,
       description: "Team supervision",
       permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
     },

@@ -21,7 +21,7 @@ export interface IAppraisalTemplate extends Document {
   applicableGrades: string[];
   applicableDepartments: string[];
   assignedUsers?: mongoose.Types.ObjectId[];
-  status: 'draft' | 'pending_approval' | 'active' | 'archived';
+  status: 'draft' | 'pending_approval' | 'active' | 'archived' | 'rejected';
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -52,7 +52,7 @@ const AppraisalTemplateSchema: Schema = new Schema({
   assignedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   status: {
     type: String,
-    enum: ['draft', 'pending_approval', 'active', 'archived'],
+    enum: ['draft', 'pending_approval', 'active', 'archived', 'rejected'],
     default: 'draft'
   },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },

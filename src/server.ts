@@ -22,6 +22,7 @@ import dashboardRoutes from './routes/dashboard.routes';
 import roleRoutes from './routes/role.routes';
 import notificationRoutes from './routes/notification.routes';
 import auditRoutes from './routes/audit.routes';
+import periodStaffAssignmentRoutes from './routes/periodStaffAssignment.routes';
 
 // Middleware
 app.use((req, res, next) => {
@@ -45,16 +46,25 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api', periodStaffAssignmentRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });
 });
 
+import { seedRoles } from './controllers/role.controller';
+
+// ...
+
 // Database Connection
 mongoose
   .connect(MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Connected to MongoDB');
+    
+    // Seed roles on startup
+    await seedRoles();
+    
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
