@@ -160,23 +160,11 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
     const currentRank = currentStepConfig.rank;
     const nextStep = workflow.steps.find((s: any) => s.rank > currentRank); // Simplified: assumes sorted ranks
 
-    // Special Logic: If Step 1 (index 0) was completed by someone OTHER than the employee,
-    // and the next step is NOT the employee, we must pause for Employee Acceptance.
-    const isFirstStep = appraisal.currentStep === 0;
     const isReviewerEmployee = req.user?._id?.toString() === appraisal.employee.toString();
     
-    // Check if next step is assigned to employee
-    let nextStepIsEmployee = false;
-    if (nextStep) {
-       // We need to check the assignment for the next step to be sure
-       const nextStepId = nextStep._id || nextStep.id;
-       const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-       if (nextAssignment && nextAssignment.assignedUser?.toString() === appraisal.employee.toString()) {
-         nextStepIsEmployee = true;
-       }
-    }
-
-    if (isFirstStep && !isReviewerEmployee && !nextStepIsEmployee) {
+    // If the reviewer was NOT the employee, we must pause for Employee Acceptance
+    // This applies to EVERY step done by someone else (Manager, HR, etc.)
+    if (!isReviewerEmployee) {
       // Pause for Employee Acceptance
       appraisal.status = 'pending_employee_review';
       
@@ -186,18 +174,24 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
         timestamp: new Date(),
         comment: 'Appraisal paused for Employee Acceptance'
       });
-    } else if (nextStep) {
-      appraisal.currentStep = appraisal.currentStep + 1; // Or set based on index
-      appraisal.status = 'in_progress';
       
-      // Update next step status to in_progress? Optional, but good for UI
-      const nextStepId = nextStep._id || nextStep.id;
-      const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-      if (nextAssignment) {
-        nextAssignment.status = 'in_progress';
-      }
+      // We do NOT increment currentStep here. 
+      // It will be incremented when the employee accepts.
     } else {
-      appraisal.status = 'completed';
+      // Employee submitted their own step, proceed to next
+      if (nextStep) {
+        appraisal.currentStep = appraisal.currentStep + 1; // Or set based on index
+        appraisal.status = 'in_progress';
+        
+        // Update next step status to in_progress
+        const nextStepId = nextStep._id || nextStep.id;
+        const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+        if (nextAssignment) {
+          nextAssignment.status = 'in_progress';
+        }
+      } else {
+        appraisal.status = 'completed';
+      }
     }
 
     appraisal.history.push({
@@ -466,5 +460,173 @@ export const deleteAllAppraisals = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting all appraisals:', error);
     res.status(500).json({ message: 'Error deleting all appraisals' });
+  }
+};
+// Lock a question for editing
+export const lockQuestion = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { questionId } = req.body;
+    const userId = req.user?._id;
+
+    const appraisal = await Appraisal.findById(id);
+    if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
+
+    // Check if already locked by someone else
+    const existingLock = appraisal.lockedQuestions?.find(l => l.questionId === questionId);
+    if (existingLock) {
+      // Check if lock is expired (e.g., 5 minutes)
+      const lockTime = new Date(existingLock.lockedAt).getTime();
+      const now = new Date().getTime();
+      const isExpired = (now - lockTime) > 5 * 60 * 1000;
+
+      if (!isExpired && existingLock.lockedBy.toString() !== userId?.toString()) {
+        return res.status(409).json({ 
+          message: 'Question is locked by another user',
+          lockedBy: existingLock.lockedBy 
+        });
+      }
+      
+      // If expired or owned by user, we update/refresh it below
+    }
+
+    // Remove existing lock for this question if any
+    if (appraisal.lockedQuestions) {
+      appraisal.lockedQuestions = appraisal.lockedQuestions.filter(l => l.questionId !== questionId);
+    } else {
+      appraisal.lockedQuestions = [];
+    }
+
+    // Add new lock
+    appraisal.lockedQuestions.push({
+      questionId,
+      lockedBy: userId!,
+      lockedAt: new Date()
+    });
+
+    await appraisal.save();
+    res.json({ message: 'Question locked successfully', lockedAt: new Date() });
+  } catch (error) {
+    res.status(500).json({ message: 'Error locking question', error });
+  }
+};
+
+// Unlock a question
+export const unlockQuestion = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { questionId } = req.body;
+    const userId = req.user?._id;
+
+    const appraisal = await Appraisal.findById(id);
+    if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
+
+    if (appraisal.lockedQuestions) {
+      // Only allow unlocking if user owns the lock or is admin
+      const lock = appraisal.lockedQuestions.find(l => l.questionId === questionId);
+      if (lock && lock.lockedBy.toString() === userId?.toString()) {
+        appraisal.lockedQuestions = appraisal.lockedQuestions.filter(l => l.questionId !== questionId);
+        await appraisal.save();
+      }
+    }
+
+    res.json({ message: 'Question unlocked successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error unlocking question', error });
+  }
+};
+
+// Save Committee Review (Shared Marks)
+export const saveCommitteeReview = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { stepId, responses } = req.body; // responses: [{ questionId, response, score, comment }]
+    const userId = req.user?._id;
+
+    const appraisal = await Appraisal.findById(id);
+    if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
+
+    const review = appraisal.reviews.find(r => r.stepId === stepId);
+    if (!review) return res.status(404).json({ message: 'Review step not found' });
+
+    if (!review.isCommittee) {
+       // Initialize committee fields if not present (migration/fallback)
+       review.isCommittee = true;
+       review.committeeMembers = review.committeeMembers || [];
+       review.changeLog = review.changeLog || [];
+    }
+
+    // Add user to committee members if not present
+    if (!review.committeeMembers?.some(m => m.toString() === userId?.toString())) {
+      review.committeeMembers?.push(userId!);
+    }
+
+    // Process updates and log changes
+    responses.forEach((update: any) => {
+      const existingResponseIndex = review.responses.findIndex(r => r.questionId === update.questionId);
+      let oldValue = null;
+
+      if (existingResponseIndex >= 0) {
+        oldValue = review.responses[existingResponseIndex].score; // Tracking score changes primarily
+        review.responses[existingResponseIndex] = { ...review.responses[existingResponseIndex], ...update };
+      } else {
+        review.responses.push(update);
+      }
+
+      // Log change if score changed
+      if (update.score !== undefined && update.score !== oldValue) {
+        review.changeLog?.push({
+          questionId: update.questionId,
+          oldValue,
+          newValue: update.score,
+          changedBy: userId!,
+          timestamp: new Date()
+        });
+      }
+    });
+
+    // Update timestamp
+    review.submittedAt = new Date(); // Update last modified time
+    review.status = 'in_progress';
+
+    await appraisal.save();
+    res.json(appraisal);
+  } catch (error) {
+    res.status(500).json({ message: 'Error saving committee review', error });
+  }
+};
+
+// Save Individual Commendation
+export const saveCommendation = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { stepId, comment } = req.body;
+    const userId = req.user?._id;
+
+    const appraisal = await Appraisal.findById(id);
+    if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
+
+    const review = appraisal.reviews.find(r => r.stepId === stepId);
+    if (!review) return res.status(404).json({ message: 'Review step not found' });
+
+    review.commendations = review.commendations || [];
+    
+    // Check if user already has a commendation
+    const existingIndex = review.commendations.findIndex(c => c.userId.toString() === userId?.toString());
+    if (existingIndex >= 0) {
+      review.commendations[existingIndex].comment = comment;
+      review.commendations[existingIndex].submittedAt = new Date();
+    } else {
+      review.commendations.push({
+        userId: userId!,
+        comment,
+        submittedAt: new Date()
+      });
+    }
+
+    await appraisal.save();
+    res.json(appraisal);
+  } catch (error) {
+    res.status(500).json({ message: 'Error saving commendation', error });
   }
 };

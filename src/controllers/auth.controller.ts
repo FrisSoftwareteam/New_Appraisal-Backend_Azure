@@ -9,7 +9,8 @@ export const login = async (req: Request, res: Response) => {
   try {
     console.log("Login attempt:", req.body);
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(400).json({ error: "Invalid login credentials" });
@@ -42,13 +43,14 @@ export const login = async (req: Request, res: Response) => {
 export const loginWithMicrosoft = async (req: Request, res: Response) => {
   try {
     const { email, name, picture } = req.body;
-
+    console.log("Login attempt:", req.body);
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
 
     // Find user by email
-    let user = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase();
+    let user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
       // User exists, update their details
@@ -68,22 +70,10 @@ export const loginWithMicrosoft = async (req: Request, res: Response) => {
         await user.save();
       }
     } else {
-      // User doesn't exist, create new one (Auto-registration)
-      const names = name ? name.split(" ") : ["Unknown", "User"];
-      const firstName = names[0];
-      const lastName = names.length > 1 ? names.slice(1).join(" ") : "User";
-
-      user = await User.create({
-        email,
-        firstName,
-        lastName,
-        role: "guest", // Default to guest until assigned
-        department: "Unassigned",
-        division: "Unassigned",
-        grade: "Unassigned",
-        avatar: picture,
-        accessLevel: 1,
-        isFirstLogin: true,
+      // User doesn't exist, return error
+      return res.status(404).json({ 
+        error: "User not found", 
+        message: "Your account has not been set up yet. Please contact HR." 
       });
     }
 

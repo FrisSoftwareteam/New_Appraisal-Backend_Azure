@@ -8,7 +8,7 @@ export interface IAppraisalQuestion {
   type: 'rating' | 'text' | 'multiple_choice';
   category: string;
   weight: number;
-  options?: string[];
+  options?: { label: string; score: number }[];
   maxScore: number;
   isRequired: boolean;
   isScored: boolean;
@@ -37,7 +37,10 @@ const AppraisalQuestionSchema: Schema = new Schema({
   },
   category: { type: String, required: true },
   weight: { type: Number, default: 0 },
-  options: [{ type: String }],
+  options: [{
+    label: { type: String },
+    score: { type: Number }
+  }],
   maxScore: { type: Number, default: 5 },
   isRequired: { type: Boolean, default: true },
   isScored: { type: Boolean, default: true },

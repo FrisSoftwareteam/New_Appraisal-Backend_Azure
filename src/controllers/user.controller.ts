@@ -93,7 +93,8 @@ export const deleteUser = async (req: Request, res: Response) => {
 
 export const getUserByEmail = async (req: Request, res: Response) => {
   try {
-    const user = await User.findOne({ email: req.params.email });
+    const email = req.params.email.toLowerCase();
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }

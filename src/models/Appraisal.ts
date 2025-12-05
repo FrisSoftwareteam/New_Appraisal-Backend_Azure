@@ -20,6 +20,21 @@ export interface IAppraisalReview {
   comments?: string;
   submittedAt?: Date;
   status: FlowStepStatus;
+  // Committee specific fields
+  isCommittee?: boolean;
+  committeeMembers?: mongoose.Types.ObjectId[];
+  commendations?: {
+    userId: mongoose.Types.ObjectId;
+    comment: string;
+    submittedAt: Date;
+  }[];
+  changeLog?: {
+    questionId: string;
+    oldValue: any;
+    newValue: any;
+    changedBy: mongoose.Types.ObjectId;
+    timestamp: Date;
+  }[];
 }
 
 export interface IStepAssignment {
@@ -48,6 +63,12 @@ export interface IAppraisal extends Document {
   rejectionReason?: string;
   createdAt: Date;
   updatedAt: Date;
+  // Committee Review Fields
+  lockedQuestions?: {
+    questionId: string;
+    lockedBy: mongoose.Types.ObjectId;
+    lockedAt: Date;
+  }[];
 }
 
 const AppraisalResponseSchema: Schema = new Schema({
@@ -70,6 +91,21 @@ const AppraisalReviewSchema: Schema = new Schema({
     enum: ["pending", "in_progress", "completed", "skipped"],
     default: "pending"
   },
+  // Committee specific fields
+  isCommittee: { type: Boolean, default: false },
+  committeeMembers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  commendations: [{
+    userId: { type: Schema.Types.ObjectId, ref: 'User' },
+    comment: { type: String },
+    submittedAt: { type: Date, default: Date.now }
+  }],
+  changeLog: [{
+    questionId: { type: String },
+    oldValue: { type: Schema.Types.Mixed },
+    newValue: { type: Schema.Types.Mixed },
+    changedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    timestamp: { type: Date, default: Date.now }
+  }]
 }, { _id: false });
 
 const StepAssignmentSchema: Schema = new Schema({
@@ -104,6 +140,16 @@ const AppraisalSchema: Schema = new Schema({
   overallScore: { type: Number },
   finalComments: { type: String },
   rejectionReason: { type: String }, // To store the latest rejection reason for easy UI display
+  
+  // Committee Review Fields
+  lockedQuestions: [{
+    questionId: { type: String, required: true },
+    lockedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    lockedAt: { type: Date, default: Date.now }
+  }],
 }, { timestamps: true });
+
+// Add index for locking to easily find expired locks if needed
+AppraisalSchema.index({ "lockedQuestions.lockedAt": 1 });
 
 export default mongoose.model<IAppraisal>('Appraisal', AppraisalSchema);
