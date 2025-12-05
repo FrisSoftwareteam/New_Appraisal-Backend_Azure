@@ -23,6 +23,7 @@ import roleRoutes from './routes/role.routes';
 import notificationRoutes from './routes/notification.routes';
 import auditRoutes from './routes/audit.routes';
 import periodStaffAssignmentRoutes from './routes/periodStaffAssignment.routes';
+import reportRoutes from './routes/report.routes';
 
 // Middleware
 app.use((req, res, next) => {
@@ -47,6 +48,7 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api', periodStaffAssignmentRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });

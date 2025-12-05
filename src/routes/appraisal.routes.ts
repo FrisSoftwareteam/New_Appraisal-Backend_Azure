@@ -9,7 +9,11 @@ import {
   getPendingAppraisals,
   getAssignedAppraisals,
   getAllAppraisals,
-  deleteAllAppraisals
+  deleteAllAppraisals,
+  lockQuestion,
+  unlockQuestion,
+  saveCommitteeReview,
+  saveCommendation
 } from '../controllers/appraisal.controller';
 import { getAssignments, updateAssignments } from '../controllers/appraisal-assignment.controller';
 import { authenticate, requirePermission } from '../middleware/auth.middleware';
@@ -53,5 +57,11 @@ router.post('/:id/reject', authenticate, rejectAppraisal);
 
 // Accept Appraisal
 router.post('/:id/accept', authenticate, acceptAppraisal);
+
+// Committee Review Routes
+router.post('/:id/lock-question', authenticate, lockQuestion);
+router.post('/:id/unlock-question', authenticate, unlockQuestion);
+router.post('/:id/committee-review', authenticate, saveCommitteeReview);
+router.post('/:id/commendation', authenticate, saveCommendation);
 
 export default router;
