@@ -6,6 +6,7 @@ import AppraisalPeriod from '../models/AppraisalPeriod';
 import User from '../models/User';
 import PeriodStaffAssignment from '../models/PeriodStaffAssignment';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { createAuditLog } from './audit.controller';
 
 // Initiate an appraisal for an employee
 export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
@@ -78,7 +79,6 @@ export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
     await appraisal.save();
     
     // Update PeriodStaffAssignment to mark as initialized
-    // Find the period by name to get its ObjectId
     const periodDoc = await AppraisalPeriod.findOne({ name: period });
     if (periodDoc) {
       await PeriodStaffAssignment.updateOne(
@@ -93,6 +93,17 @@ export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
         }
       );
     }
+    
+    // Audit Log
+    await createAuditLog(
+      req.user?._id?.toString()!,
+      'create',
+      'appraisal',
+      appraisal._id.toString(),
+      `Initiated appraisal for ${(employee as any).firstName} ${(employee as any).lastName} - ${period}`,
+      undefined,
+      { templateId, workflowId, period }
+    );
     
     res.status(201).json(appraisal);
   } catch (error) {
@@ -450,13 +461,30 @@ export const getAssignedAppraisals = async (req: AuthRequest, res: Response) => 
 };
 
 // Delete All Appraisals (Admin Cleanup)
-export const deleteAllAppraisals = async (req: Request, res: Response) => {
+export const deleteAllAppraisals = async (req: AuthRequest, res: Response) => {
   try {
     const result = await Appraisal.deleteMany({});
     res.status(200).json({ 
       message: 'All appraisals deleted successfully', 
       deletedCount: result.deletedCount 
     });
+
+    // Audit Log
+    if (result.deletedCount > 0) {
+      // Since this is an admin action and user might not be in req.user if called internally (but it is an endpoint),
+      // we check req.user.
+      if (req.user) {
+        await createAuditLog(
+          req.user._id.toString(),
+          'delete',
+          'appraisal',
+          'ALL',
+          `Deleted all appraisals (${result.deletedCount} records)`,
+          undefined,
+          { deletedCount: result.deletedCount }
+        );
+      }
+    }
   } catch (error) {
     console.error('Error deleting all appraisals:', error);
     res.status(500).json({ message: 'Error deleting all appraisals' });
