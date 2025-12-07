@@ -298,6 +298,15 @@ export const rejectAppraisal = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Audit Log
+    await createAuditLog(
+      req.user?._id?.toString()!,
+      'appraisal_rejected',
+      'appraisal',
+      appraisal._id.toString(),
+      `Appraisal rejected/returned by ${req.user?.role}: ${reason}`
+    );
+
     await appraisal.save();
     res.json(appraisal);
   } catch (error) {
@@ -319,33 +328,66 @@ export const acceptAppraisal = async (req: AuthRequest, res: Response) => {
     }
 
     if (appraisal.status === 'pending_employee_review') {
-      // Intermediate acceptance: Move to next step
-      appraisal.status = 'in_progress';
-      appraisal.currentStep = appraisal.currentStep + 1;
-      
-      // Update next step status
       const workflow: any = appraisal.workflow;
-      // We assume currentStep was NOT incremented when it went to pending_employee_review
-      // So now we increment it.
-      // We need to find the next step to set its status
-      if (workflow && workflow.steps[appraisal.currentStep]) {
-         const nextStep = workflow.steps[appraisal.currentStep];
-         const nextStepId = nextStep._id || nextStep.id;
-         const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-         if (nextAssignment) {
-           nextAssignment.status = 'in_progress';
-         }
+      const nextStepIndex = appraisal.currentStep + 1;
+
+      // Check if this was the final step
+      if (nextStepIndex >= workflow.steps.length) {
+        // Workflow Complete
+        appraisal.status = 'completed';
+        appraisal.currentStep = nextStepIndex;
+
+        appraisal.history.push({
+          action: 'accepted_final',
+          actor: req.user?._id!,
+          timestamp: new Date(),
+          comment: 'Appraisal review accepted and process finalized'
+        });
+
+        // Audit Log
+        await createAuditLog(
+          req.user?._id?.toString()!,
+          'appraisal_completed',
+          'appraisal',
+          appraisal._id.toString(),
+          'Appraisal finalized and accepted by employee'
+        );
+      } else {
+        // Intermediate acceptance: Move to next step
+        appraisal.status = 'in_progress';
+        appraisal.currentStep = nextStepIndex;
+        
+        // Update next step status
+        if (workflow && workflow.steps[nextStepIndex]) {
+           const nextStep = workflow.steps[nextStepIndex];
+           const nextStepId = nextStep._id || nextStep.id;
+           const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+           if (nextAssignment) {
+             nextAssignment.status = 'in_progress';
+           }
+        }
+  
+        appraisal.history.push({
+          action: 'accepted_intermediate',
+          actor: req.user?._id!,
+          timestamp: new Date(),
+          comment: 'Employee accepted the appraisal review'
+        });
+  
+        // Audit Log
+        await createAuditLog(
+          req.user?._id?.toString()!,
+          'appraisal_accepted_intermediate',
+          'appraisal',
+          appraisal._id.toString(),
+          'Employee accepted intermediate review',
+          undefined,
+          { currentStep: appraisal.currentStep }
+        );
       }
 
-      appraisal.history.push({
-        action: 'accepted_intermediate',
-        actor: req.user?._id!,
-        timestamp: new Date(),
-        comment: 'Employee accepted the appraisal review'
-      });
-
     } else {
-      // Final acceptance
+      // Final acceptance (Direct, if not via pending_employee_review)
       appraisal.status = 'completed';
       
       appraisal.history.push({
@@ -354,6 +396,15 @@ export const acceptAppraisal = async (req: AuthRequest, res: Response) => {
         timestamp: new Date(),
         comment: 'Appraisal accepted/finalized'
       });
+
+      // Audit Log
+      await createAuditLog(
+        req.user?._id?.toString()!,
+        'appraisal_completed',
+        'appraisal',
+        appraisal._id.toString(),
+        'Appraisal finalized and accepted by employee'
+      );
     }
 
     await appraisal.save();
