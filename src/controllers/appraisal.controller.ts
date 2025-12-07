@@ -216,6 +216,18 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
     appraisal.rejectionReason = undefined;
 
     await appraisal.save();
+
+    // Audit Log
+    await createAuditLog(
+      req.user?._id?.toString()!,
+      'submit_review',
+      'appraisal',
+      appraisal._id.toString(),
+      `Review submitted for step: ${currentStepConfig.name} by ${req.user?.role}`,
+      undefined,
+      { stepId, overallScore }
+    );
+
     res.json(appraisal);
   } catch (error) {
     console.error('Error submitting review:', error);
@@ -618,6 +630,18 @@ export const saveCommitteeReview = async (req: AuthRequest, res: Response) => {
     review.status = 'in_progress';
 
     await appraisal.save();
+
+    // Audit Log
+    await createAuditLog(
+      req.user?._id?.toString()!,
+      'committee_review',
+      'appraisal',
+      appraisal._id.toString(),
+      `Committee review updated by ${req.user?._id?.toString()}`,
+      undefined,
+      { stepId, updates: responses.length }
+    );
+
     res.json(appraisal);
   } catch (error) {
     res.status(500).json({ message: 'Error saving committee review', error });

@@ -117,11 +117,11 @@ export const seedRoles = async () => {
   ];
 
   for (const roleData of defaultRoles) {
-    await Role.findOneAndUpdate(
-      { slug: roleData.slug },
-      roleData,
-      { upsert: true, new: true }
-    );
+    // Only create if it doesn't exist to prevent overwriting custom permissions
+    const existing = await Role.findOne({ slug: roleData.slug });
+    if (!existing) {
+      await Role.create(roleData);
+    }
   }
   console.log('Roles seeded successfully');
 };
