@@ -10,7 +10,8 @@ export const login = async (req: Request, res: Response) => {
     console.log("Login attempt:", req.body);
     const { email, password } = req.body;
     const normalizedEmail = email.toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
+    // Disable buffering so we fail fast if DB is disconnected
+    const user = await User.findOne({ email: normalizedEmail }).setOptions({ bufferCommands: false });
 
     if (!user) {
       return res.status(400).json({ error: "Invalid login credentials" });
@@ -50,7 +51,7 @@ export const loginWithMicrosoft = async (req: Request, res: Response) => {
 
     // Find user by email
     const normalizedEmail = email.toLowerCase();
-    let user = await User.findOne({ email: normalizedEmail });
+    let user = await User.findOne({ email: normalizedEmail }).setOptions({ bufferCommands: false });
 
     if (user) {
       // User exists, update their details
