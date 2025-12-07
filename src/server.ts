@@ -59,11 +59,44 @@ import { seedRoles } from './controllers/role.controller';
 // ...
 
 // Database Connection
+// Database Connection Handling
+
+// Handle uncaught exceptions to prevent immediate hard crash without logging
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION! 💥', err.name, err.message);
+  console.error(err);
+  // In production, you might want to exit: process.exit(1); 
+  // But for resilience against transient DB errors, logging might be preferred if the process is stable.
+});
+
+process.on('unhandledRejection', (err: any) => {
+  console.error('UNHANDLED REJECTION! 💥', err.name, err.message);
+  // Ideally, close server and exit, but for now we log strictly.
+});
+
+// Mongoose connection events
+mongoose.connection.on('connected', () => {
+  console.log('Mongoose connection established');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('Mongoose connection error:', err);
+  // Check if it's a temporary network issue vs fatal
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose connection disconnected');
+});
+
+// Connect
+const mongooseOptions = {
+    serverSelectionTimeoutMS: 5000, // Fail fast (5s) if DB is unreachable
+    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+};
+
 mongoose
-  .connect(MONGODB_URI)
+  .connect(MONGODB_URI, mongooseOptions)
   .then(async () => {
-    console.log('Connected to MongoDB');
-    
     // Seed roles on startup
     await seedRoles();
     
@@ -72,7 +105,8 @@ mongoose
     });
   })
   .catch((err) => {
-    console.error('MongoDB connection error:', err);
+    console.error('Initial MongoDB connection error:', err);
+    // process.exit(1); // Optional: Exit if initial connection fails
   });
 
 export default app;
