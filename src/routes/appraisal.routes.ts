@@ -9,6 +9,7 @@ import {
   getPendingAppraisals,
   getAssignedAppraisals,
   getAllAppraisals,
+  deleteAppraisal,
   deleteAllAppraisals,
   lockQuestion,
   unlockQuestion,
@@ -24,6 +25,9 @@ const router = express.Router();
 
 // Initiate (Admin/HR only)
 router.post('/initiate', authenticate, requirePermission('createAppraisals'), initiateAppraisal);
+
+// Delete Single Appraisal (Admin - returns to pending initiation)
+router.delete('/:id', authenticate, requirePermission('createAppraisals'), deleteAppraisal);
 
 // Delete All (Super Admin only - Cleanup)
 router.delete('/delete-all', authenticate, requirePermission('manageSystem'), deleteAllAppraisals);

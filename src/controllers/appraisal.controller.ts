@@ -191,7 +191,7 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
     } else {
       // Employee submitted their own step, proceed to next
       if (nextStep) {
-        appraisal.currentStep = appraisal.currentStep + 1; // Or set based on index
+        appraisal.currentStep = appraisal.currentStep + 1;
         appraisal.status = 'in_progress';
         
         // Update next step status to in_progress
@@ -200,9 +200,9 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
         if (nextAssignment) {
           nextAssignment.status = 'in_progress';
         }
-      } else {
-        appraisal.status = 'completed';
       }
+      // If no next step, keep status as 'in_progress' - waiting for next reviewer
+      // Appraisal should only complete via acceptAppraisal after employee accepts final step
     }
 
     appraisal.history.push({
@@ -520,6 +520,65 @@ export const getAssignedAppraisals = async (req: AuthRequest, res: Response) => 
   } catch (error) {
     console.error('Error fetching assigned appraisals:', error);
     res.status(500).json({ message: 'Error fetching assigned appraisals', error });
+  }
+};
+
+// Delete Single Appraisal (Admin - returns employee to pending initiation)
+export const deleteAppraisal = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Find the appraisal first to get employee and period info
+    const appraisal = await Appraisal.findById(id);
+    
+    if (!appraisal) {
+      return res.status(404).json({ message: 'Appraisal not found' });
+    }
+
+    const employeeId = appraisal.employee;
+    const periodName = appraisal.period;
+
+    // Delete the appraisal
+    await Appraisal.findByIdAndDelete(id);
+
+    // Find the period to get its ID
+    const period = await AppraisalPeriod.findOne({ name: periodName });
+    
+    if (period) {
+      // Reset the PeriodStaffAssignment to return employee to pending initiation
+      await PeriodStaffAssignment.updateOne(
+        { 
+          employee: employeeId,
+          period: period._id
+        },
+        { 
+          isInitialized: false
+          // Keep workflow and template for history
+        }
+      );
+    }
+
+    // Audit Log
+    if (req.user) {
+      await createAuditLog(
+        req.user._id.toString(),
+        'delete',
+        'appraisal',
+        id,
+        `Deleted appraisal for employee ${employeeId} in period ${periodName}`,
+        undefined,
+        { employeeId, period: periodName }
+      );
+    }
+
+    res.status(200).json({ 
+      message: 'Appraisal deleted successfully. Employee returned to pending initiation.',
+      employeeId,
+      period: periodName
+    });
+  } catch (error) {
+    console.error('Error deleting appraisal:', error);
+    res.status(500).json({ message: 'Error deleting appraisal', error });
   }
 };
 

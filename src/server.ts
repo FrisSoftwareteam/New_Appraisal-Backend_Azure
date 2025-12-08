@@ -24,6 +24,7 @@ import notificationRoutes from './routes/notification.routes';
 import auditRoutes from './routes/audit.routes';
 import periodStaffAssignmentRoutes from './routes/periodStaffAssignment.routes';
 import reportRoutes from './routes/report.routes';
+import { errorHandler, checkDatabaseConnection } from './middleware/error.middleware';
 
 // Middleware
 app.use((req, res, next) => {
@@ -52,6 +53,16 @@ app.use('/api/reports', reportRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  const dbConnected = checkDatabaseConnection();
+  res.status(dbConnected ? 200 : 503).json({
+    status: dbConnected ? 'healthy' : 'unhealthy',
+    database: dbConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
 
 import { seedRoles } from './controllers/role.controller';
@@ -90,23 +101,45 @@ mongoose.connection.on('disconnected', () => {
 
 // Connect
 const mongooseOptions = {
-    serverSelectionTimeoutMS: 5000, // Fail fast (5s) if DB is unreachable
+    serverSelectionTimeoutMS: 30000, // Increased to 30s to allow for network latency/failover
     socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    maxPoolSize: 10, // Maintain up to 10 socket connections
+    family: 4, // Use IPv4, skip trying IPv6
+    autoIndex: false // Don't build indexes in production
 };
 
+// Start server regardless of DB connection status
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// Global error handler - MUST be after all routes
+app.use(errorHandler);
+
+// Connect to MongoDB (async, non-blocking)
 mongoose
   .connect(MONGODB_URI, mongooseOptions)
   .then(async () => {
+    console.log('MongoDB connected successfully');
     // Seed roles on startup
-    await seedRoles();
-    
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
+    try {
+      await seedRoles();
+    } catch (err) {
+      console.error('Error seeding roles:', err);
+    }
   })
   .catch((err) => {
     console.error('Initial MongoDB connection error:', err);
-    // process.exit(1); // Optional: Exit if initial connection fails
+    console.warn('⚠️  Server is running but database is unavailable. API requests will return 503.');
   });
+
+// Auto-reconnect on disconnection
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected. Attempting to reconnect...');
+});
+
+mongoose.connection.on('reconnected', () => {
+  console.log('MongoDB reconnected successfully');
+});
 
 export default app;
