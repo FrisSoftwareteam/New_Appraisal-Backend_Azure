@@ -10,8 +10,15 @@ export const login = async (req: Request, res: Response) => {
     console.log("Login attempt:", req.body);
     const { email, password } = req.body;
     const normalizedEmail = email.toLowerCase();
-    // Disable buffering so we fail fast if DB is disconnected
-    const user = await User.findOne({ email: normalizedEmail }).setOptions({ bufferCommands: false });
+    
+    // Find user
+    let user;
+    try {
+      user = await User.findOne({ email: normalizedEmail });
+    } catch (dbError) {
+      // Pass database errors to global error handler
+      throw dbError;
+    }
 
     if (!user) {
       return res.status(400).json({ error: "Invalid login credentials" });
@@ -51,7 +58,13 @@ export const loginWithMicrosoft = async (req: Request, res: Response) => {
 
     // Find user by email
     const normalizedEmail = email.toLowerCase();
-    let user = await User.findOne({ email: normalizedEmail }).setOptions({ bufferCommands: false });
+    let user;
+    try {
+      user = await User.findOne({ email: normalizedEmail });
+    } catch (dbError) {
+      // Pass database errors to global error handler
+      throw dbError;
+    }
 
     if (user) {
       // User exists, update their details
@@ -114,7 +127,13 @@ export const debugLogin = async (req: Request, res: Response) => {
       targetRole === "employee" ? "employee@company.com" : "admin@company.com";
 
     // Find or create a test user
-    let user = await User.findOne({ email });
+    let user;
+    try {
+      user = await User.findOne({ email });
+    } catch (dbError) {
+      // Pass database errors to global error handler
+      throw dbError;
+    }
 
     if (!user) {
       if (targetRole === "employee") {
