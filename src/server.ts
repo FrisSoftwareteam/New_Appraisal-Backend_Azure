@@ -24,6 +24,7 @@ import notificationRoutes from './routes/notification.routes';
 import auditRoutes from './routes/audit.routes';
 import periodStaffAssignmentRoutes from './routes/periodStaffAssignment.routes';
 import reportRoutes from './routes/report.routes';
+import appraisalAdminEditRoutes from './routes/appraisal-admin-edit.routes';
 import { errorHandler, checkDatabaseConnection } from './middleware/error.middleware';
 
 // Middleware
@@ -43,6 +44,8 @@ app.use('/api/periods', periodRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/templates', templateRoutes);
+// Admin edit routes must come BEFORE main appraisal routes for proper route matching
+app.use('/api/appraisals', appraisalAdminEditRoutes);
 app.use('/api/appraisals', appraisalRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/roles', roleRoutes);

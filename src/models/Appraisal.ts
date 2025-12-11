@@ -69,6 +69,24 @@ export interface IAppraisal extends Document {
     lockedBy: mongoose.Types.ObjectId;
     lockedAt: Date;
   }[];
+  // Post-Completion Admin Editing
+  adminEditedVersion?: {
+    reviews: IAppraisalReview[];
+    overallScore?: number;
+    finalComments?: string;
+    editedBy: mongoose.Types.ObjectId;
+    editedAt: Date;
+    editHistory: {
+      editor: mongoose.Types.ObjectId;
+      timestamp: Date;
+      changes: {
+        field: string;
+        oldValue: any;
+        newValue: any;
+      }[];
+    }[];
+  };
+  isAdminEdited: boolean;
 }
 
 const AppraisalResponseSchema: Schema = new Schema({
@@ -147,6 +165,25 @@ const AppraisalSchema: Schema = new Schema({
     lockedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     lockedAt: { type: Date, default: Date.now }
   }],
+  
+  // Post-Completion Admin Editing
+  adminEditedVersion: {
+    reviews: [AppraisalReviewSchema],
+    overallScore: { type: Number },
+    finalComments: { type: String },
+    editedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    editedAt: { type: Date },
+    editHistory: [{
+      editor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+      timestamp: { type: Date, default: Date.now },
+      changes: [{
+        field: { type: String, required: true },
+        oldValue: { type: Schema.Types.Mixed },
+        newValue: { type: Schema.Types.Mixed }
+      }]
+    }]
+  },
+  isAdminEdited: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Add index for locking to easily find expired locks if needed
