@@ -32,11 +32,13 @@ jobs:
 
       - name: Prepare production artifacts
         run: |
-          mkdir deploy
+          mkdir -p deploy
           cp -R dist deploy/ 2>/dev/null || true
-          cp package.json deploy/
-          cp package-lock.json deploy/
+          cp package.json deploy/ 2>/dev/null || true
+          cp package-lock.json deploy/ 2>/dev/null || true
           cp server.js deploy/ 2>/dev/null || true
+          # show contents to help debug if deploy is empty
+          echo "Contents of deploy before upload:" && ls -la deploy || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -55,6 +57,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: node-app
+          path: deploy
+
+      - name: Show downloaded files
+        run: |
+          echo "PWD: $(pwd)"
+          ls -la
+          if [ -d deploy ]; then
+            echo "deploy exists:" && ls -la deploy
+          else
+            echo "node-app contents:" && ls -la node-app || true
+          fi
+          if [ ! -d deploy ]; then echo "ERROR: ./deploy not found"; exit 1; fi
 
       - name: Login to Azure
         uses: azure/login@v2
