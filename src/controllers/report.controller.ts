@@ -3,6 +3,32 @@ import Appraisal from '../models/Appraisal';
 import User from '../models/User';
 import mongoose from 'mongoose';
 
+// Return available periods derived from appraisals (fallback when /periods is empty)
+export const getReportPeriods = async (req: Request, res: Response) => {
+  try {
+    const periods = await Appraisal.aggregate([
+      {
+        $group: {
+          _id: '$period',
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]);
+
+    const mapped = periods.map((p) => ({
+      id: String(p._id),
+      name: String(p._id),
+      count: p.count,
+    }));
+
+    res.json(mapped);
+  } catch (error) {
+    console.error('Error fetching report periods:', error);
+    res.status(500).json({ message: 'Error fetching report periods' });
+  }
+};
+
 export const getReportStats = async (req: Request, res: Response) => {
   try {
     const { period } = req.query;
@@ -11,9 +37,26 @@ export const getReportStats = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Period is required' });
     }
 
+    // Build period match: support both ObjectId and string (name)
+    const periodMatch = mongoose.Types.ObjectId.isValid(String(period))
+      ? { $or: [{ period: period }, { period: String(period) }] }
+      : { period: String(period) }
+
+    // Common addFields to prefer admin-edited overallScore when present
+    const withEffectiveScore = [
+      {
+        $addFields: {
+          effectiveScore: {
+            $ifNull: ['$adminEditedVersion.overallScore', '$overallScore']
+          }
+        }
+      }
+    ]
+
     // 1. Overall Status Counts
     const statusCounts = await Appraisal.aggregate([
-      { $match: { period } },
+      { $match: periodMatch },
+      ...withEffectiveScore,
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
@@ -26,7 +69,9 @@ export const getReportStats = async (req: Request, res: Response) => {
     // 2. Average Scores by Department
     // We need to lookup the employee to get their department
     const deptAverages = await Appraisal.aggregate([
-      { $match: { period, status: 'completed', overallScore: { $exists: true } } },
+      { $match: { ...periodMatch, status: 'completed' } },
+      ...withEffectiveScore,
+      { $match: { effectiveScore: { $ne: null } } },
       {
         $lookup: {
           from: 'users',
@@ -39,7 +84,7 @@ export const getReportStats = async (req: Request, res: Response) => {
       {
         $group: {
           _id: '$employeeDetails.department',
-          averageScore: { $avg: '$overallScore' },
+          averageScore: { $avg: '$effectiveScore' },
           count: { $sum: 1 }
         }
       },
@@ -48,17 +93,19 @@ export const getReportStats = async (req: Request, res: Response) => {
 
     // 3. Score Distribution (e.g., <50, 50-70, 70-90, >90)
     const scoreDistribution = await Appraisal.aggregate([
-        { $match: { period, status: 'completed', overallScore: { $exists: true } } },
-        {
-            $bucket: {
-                groupBy: "$overallScore",
-                boundaries: [0, 50, 70, 90, 101], // 101 to include 100
-                default: "Other",
-                output: {
-                    count: { $sum: 1 }
-                }
-            }
+      { $match: { ...periodMatch, status: 'completed' } },
+      ...withEffectiveScore,
+      { $match: { effectiveScore: { $ne: null } } },
+      {
+        $bucket: {
+          groupBy: "$effectiveScore",
+          boundaries: [0, 50, 70, 90, 101], // 101 to include 100
+          default: "Other",
+          output: {
+            count: { $sum: 1 }
+          }
         }
+      }
     ]);
 
     // 4. completion rate over time (simplified: just total vs completed)

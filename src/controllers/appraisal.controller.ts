@@ -121,6 +121,23 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
     const appraisal = await Appraisal.findById(id).populate('workflow');
     if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
 
+    // Check if appraisal is completed and user is admin/committee
+    if (appraisal.status === 'completed') {
+      const isAdminOrCommittee = ['hr_admin', 'appraisal_committee', 'super_admin'].includes(req.user?.role || '');
+      
+      if (isAdminOrCommittee) {
+        return res.status(400).json({ 
+          message: 'This appraisal is completed. Please use the admin edit endpoint to modify it.',
+          hint: `PUT /api/appraisals/${id}/admin-edit`,
+          useAdminEdit: true
+        });
+      } else {
+        return res.status(400).json({ 
+          message: 'This appraisal is already completed and cannot be modified.' 
+        });
+      }
+    }
+
     // Find the step in the workflow to verify rank/order
     const workflow: any = appraisal.workflow;
     const currentStepConfig = workflow.steps.find((s: any) => (s._id || s.id).toString() === stepId);
