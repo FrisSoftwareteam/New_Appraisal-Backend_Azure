@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Appraisal from '../models/Appraisal';
 import User from '../models/User';
 import mongoose from 'mongoose';
+import AppraisalPeriod from '../models/AppraisalPeriod';
 
 // Return available periods derived from appraisals (fallback when /periods is empty)
 export const getReportPeriods = async (req: Request, res: Response) => {
@@ -29,6 +30,8 @@ export const getReportPeriods = async (req: Request, res: Response) => {
   }
 };
 
+// ... (existing imports)
+
 export const getReportStats = async (req: Request, res: Response) => {
   try {
     const { period } = req.query;
@@ -37,10 +40,17 @@ export const getReportStats = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Period is required' });
     }
 
-    // Build period match: support both ObjectId and string (name)
-    const periodMatch = mongoose.Types.ObjectId.isValid(String(period))
-      ? { $or: [{ period: period }, { period: String(period) }] }
-      : { period: String(period) }
+    let periodName = String(period);
+
+    // If the provided period is a valid ObjectId, try to find its name
+    if (mongoose.Types.ObjectId.isValid(periodName)) {
+      const periodDoc = await AppraisalPeriod.findById(periodName);
+      if (periodDoc) {
+        periodName = periodDoc.name;
+      }
+    }
+
+    const periodMatch = { period: periodName };
 
     // Common addFields to prefer admin-edited overallScore when present
     const withEffectiveScore = [
@@ -109,8 +119,8 @@ export const getReportStats = async (req: Request, res: Response) => {
     ]);
 
     // 4. completion rate over time (simplified: just total vs completed)
-    const totalAppraisals = await Appraisal.countDocuments({ period });
-    const completedAppraisals = await Appraisal.countDocuments({ period, status: 'completed' });
+    const totalAppraisals = await Appraisal.countDocuments(periodMatch);
+    const completedAppraisals = await Appraisal.countDocuments({ ...periodMatch, status: 'completed' });
 
     res.json({
       period,
