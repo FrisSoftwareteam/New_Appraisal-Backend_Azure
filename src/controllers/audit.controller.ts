@@ -74,3 +74,13 @@ export const createAuditLog = async (
     console.error('Error creating audit log:', error);
   }
 };
+
+// Delete all audit logs (super_admin only)
+export const deleteAllAuditLogs = async (req: Request, res: Response) => {
+  try {
+    await AuditLog.deleteMany({});
+    res.json({ message: 'All audit logs cleared successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error clearing audit logs', error });
+  }
+};

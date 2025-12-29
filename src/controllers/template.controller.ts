@@ -11,10 +11,15 @@ export const createTemplate = async (req: AuthRequest, res: Response) => {
   try {
     const { name, description, questions, applicableGrades, applicableDepartments, assignedUsers, status } = req.body;
 
+    // Deduplicate arrays
+    const uniqueAssignedUsers = assignedUsers ? [...new Set(assignedUsers)] : [];
+    const uniqueGrades = applicableGrades ? [...new Set(applicableGrades)] : [];
+    const uniqueDepartments = applicableDepartments ? [...new Set(applicableDepartments)] : [];
+
     // Validate assigned users if provided
-    if (assignedUsers && assignedUsers.length > 0) {
-      const users = await User.find({ _id: { $in: assignedUsers } });
-      if (users.length !== assignedUsers.length) {
+    if (uniqueAssignedUsers.length > 0) {
+      const users = await User.find({ _id: { $in: uniqueAssignedUsers } });
+      if (users.length !== uniqueAssignedUsers.length) {
         return res.status(400).json({ message: 'One or more assigned users not found' });
       }
     }
@@ -23,9 +28,9 @@ export const createTemplate = async (req: AuthRequest, res: Response) => {
       name,
       description,
       questions,
-      applicableGrades,
-      applicableDepartments,
-      assignedUsers,
+      applicableGrades: uniqueGrades,
+      applicableDepartments: uniqueDepartments,
+      assignedUsers: uniqueAssignedUsers,
       status: status || 'draft',
       createdBy: req.user?._id,
     });
@@ -71,10 +76,15 @@ export const updateTemplate = async (req: Request, res: Response) => {
   try {
     const { name, description, questions, applicableGrades, applicableDepartments, assignedUsers, status } = req.body;
 
+    // Deduplicate arrays
+    const uniqueAssignedUsers = assignedUsers ? [...new Set(assignedUsers)] : undefined; // undefined to skip update if not provided
+    const uniqueGrades = applicableGrades ? [...new Set(applicableGrades)] : undefined;
+    const uniqueDepartments = applicableDepartments ? [...new Set(applicableDepartments)] : undefined;
+
     // Validate assigned users if provided
-    if (assignedUsers && assignedUsers.length > 0) {
-      const users = await User.find({ _id: { $in: assignedUsers } });
-      if (users.length !== assignedUsers.length) {
+    if (uniqueAssignedUsers && uniqueAssignedUsers.length > 0) {
+      const users = await User.find({ _id: { $in: uniqueAssignedUsers } });
+      if (users.length !== uniqueAssignedUsers.length) {
         return res.status(400).json({ message: 'One or more assigned users not found' });
       }
     }
@@ -85,9 +95,9 @@ export const updateTemplate = async (req: Request, res: Response) => {
         name,
         description,
         questions,
-        applicableGrades,
-        applicableDepartments,
-        assignedUsers,
+        ...(uniqueGrades && { applicableGrades: uniqueGrades }),
+        ...(uniqueDepartments && { applicableDepartments: uniqueDepartments }),
+        ...(uniqueAssignedUsers && { assignedUsers: uniqueAssignedUsers }),
         status,
       },
       { new: true }
@@ -138,9 +148,11 @@ export const assignTemplate = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'userIds array is required' });
     }
 
+    const uniqueUserIds = [...new Set(userIds)];
+
     const template = await AppraisalTemplate.findByIdAndUpdate(
       req.params.id,
-      { $addToSet: { assignedUsers: { $each: userIds } } },
+      { assignedUsers: uniqueUserIds }, // Direct assignment to allow replacing/removing
       { new: true }
     ).populate('assignedUsers', 'firstName lastName email');
 
