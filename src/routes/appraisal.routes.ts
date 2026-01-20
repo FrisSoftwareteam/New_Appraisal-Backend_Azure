@@ -14,7 +14,8 @@ import {
   lockQuestion,
   unlockQuestion,
   saveCommitteeReview,
-  saveCommendation
+  saveCommendation,
+  adminEditAppraisal
 } from '../controllers/appraisal.controller';
 import { getAssignments, updateAssignments } from '../controllers/appraisal-assignment.controller';
 import { authenticate, requirePermission } from '../middleware/auth.middleware';
@@ -61,6 +62,9 @@ router.post('/:id/reject', authenticate, rejectAppraisal);
 
 // Accept Appraisal
 router.post('/:id/accept', authenticate, acceptAppraisal);
+
+// Admin Edit (Post-Completion)
+router.put('/:id/admin-edit', authenticate, requirePermission('createAppraisals'), adminEditAppraisal);
 
 // Committee Review Routes
 router.post('/:id/lock-question', authenticate, lockQuestion);

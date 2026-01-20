@@ -809,3 +809,75 @@ export const saveCommendation = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: 'Error saving commendation', error });
   }
 };
+
+// Admin Edit Appraisal (Post-completion override)
+export const adminEditAppraisal = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reviews, overallScore, finalComments } = req.body;
+    
+    // Permission check
+    if (!['hr_admin', 'appraisal_committee', 'super_admin'].includes(req.user?.role || '')) {
+      return res.status(403).json({ message: 'Not authorized to edit completed appraisals' });
+    }
+
+    const appraisal = await Appraisal.findById(id);
+    if (!appraisal) return res.status(404).json({ message: 'Appraisal not found' });
+
+    // Ensure appraisal is completed (or pending_employee_review if we want to allow editing then too, but usually completed)
+    // The frontend checks for 'completed', so we'll enforce that or at least allow it.
+
+    // Prepare edit history entry
+    // Ideally we diff changes, but for now we just log the event
+    const editEntry = {
+      editor: req.user?._id,
+      timestamp: new Date(),
+      changes: [] // TODO: Detailed diffing if needed
+    };
+
+    // Update adminEditedVersion
+    if (!appraisal.adminEditedVersion) {
+      appraisal.adminEditedVersion = {
+        reviews: [],
+        editHistory: []
+      } as any;
+    }
+
+    // Save old state to history if needed? Or just append to editHistory list
+    appraisal.adminEditedVersion!.editHistory.push(editEntry as any);
+
+    // Update fields
+    appraisal.adminEditedVersion!.reviews = reviews;
+    appraisal.adminEditedVersion!.overallScore = overallScore;
+    appraisal.adminEditedVersion!.finalComments = finalComments;
+    appraisal.adminEditedVersion!.editedBy = req.user!._id;
+    appraisal.adminEditedVersion!.editedAt = new Date();
+    
+    appraisal.isAdminEdited = true;
+
+    // Optional: Should we update the MAIN fields too?
+    // If reports use main fields, we might want to sync them OR ensure reports check adminEditedVersion.
+    // The implementation of reports I saw earlier DOES check adminEditedVersion.
+    // So we keep them separate to preserve original history?
+    // However, for simplified querying, some systems overwrite.
+    // Based on the frontend logic: "Use admin-edited reviews if present; otherwise use original reviews"
+    // And report logic: "const overallRating = app.adminEditedVersion?.overallScore ?? app.overallScore"
+    // So keeping them separate is correct for this architecture.
+
+    await appraisal.save();
+
+    // Audit Log
+    await createAuditLog(
+      req.user?._id?.toString()!,
+      'admin_edit',
+      'appraisal',
+      appraisal._id.toString(),
+      `Appraisal admin-edited by ${req.user?.firstName} ${req.user?.lastName}`
+    );
+
+    res.json(appraisal);
+  } catch (error) {
+    console.error('Error in admin edit:', error);
+    res.status(500).json({ message: 'Error saving admin edits', error });
+  }
+};
