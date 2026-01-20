@@ -27,7 +27,13 @@ export interface IUser extends Document {
   jobTitle?: string;
   designation?: string;
   gender?: string;
+  ranking?: string;
+  category?: string;
+  dateConfirmed?: Date;
   dateOfLastPromotion?: Date;
+  dateOfBirth?: Date;
+  previousYearRating?: string;
+  mdRecommendationPreviousYear?: string;
   educationalQualifications?: string[];
   professionalCertifications?: string[];
   trainingsAttended?: Array<{ title: string; year: number }>;
@@ -70,7 +76,12 @@ const UserSchema: Schema = new Schema({
   jobTitle: { type: String },
   designation: { type: String },
   gender: { type: String },
+  ranking: { type: String },
+  category: { type: String },
+  dateConfirmed: { type: Date },
   dateOfLastPromotion: { type: Date },
+  previousYearRating: { type: String },
+  mdRecommendationPreviousYear: { type: String },
   educationalQualifications: [{ type: String }],
   professionalCertifications: [{ type: String }],
   trainingsAttended: [{
