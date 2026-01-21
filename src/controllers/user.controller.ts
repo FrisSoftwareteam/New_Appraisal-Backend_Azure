@@ -159,7 +159,7 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
     const dateFields = ["dateConfirmed", "dateOfLastPromotion", "dateOfBirth"];
 
     for (const row of data as any[]) {
-      const email = row.email || row.Email;
+      const email = row.email || row.Email || row.EmailAddress;
 
       if (!email) {
         results.failed++;
@@ -178,8 +178,18 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
 
         // Pre-process row to handle field synonyms
         // e.g. "Date of Birth" or "DOB" -> "dateOfBirth"
-        if (row["Date of Birth"] || row["DOB"] || row["DateOfBirth"]) {
-           row["dateOfBirth"] = row["Date of Birth"] || row["DOB"] || row["DateOfBirth"];
+        if (row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"]) {
+           row["dateOfBirth"] = row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"];
+        }
+
+        // Handle Date Confirmed
+        if (row["Date Confirmed"]) {
+           row["dateConfirmed"] = row["Date Confirmed"];
+        }
+
+        // Handle Ranking
+        if (row["Ranking"]) {
+           row["ranking"] = row["Ranking"];
         }
 
         let hasUpdates = false;

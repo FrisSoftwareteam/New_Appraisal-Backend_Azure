@@ -272,6 +272,7 @@ export const exportReport = async (req: Request, res: Response) => {
             "Full Name": `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Unknown',
             "Department": emp.department || '',
             "Grade": emp.grade || '',
+            "Ranking": emp.ranking || '',
             "Date of Birth": formatDate(emp.dateOfBirth),
             "Age": calculateAge(emp.dateOfBirth),
             "Date Confirmed": formatDate(emp.dateConfirmed),
