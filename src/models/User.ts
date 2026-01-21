@@ -80,6 +80,7 @@ const UserSchema: Schema = new Schema({
   category: { type: String },
   dateConfirmed: { type: Date },
   dateOfLastPromotion: { type: Date },
+  dateOfBirth: { type: Date },
   previousYearRating: { type: String },
   mdRecommendationPreviousYear: { type: String },
   educationalQualifications: [{ type: String }],
