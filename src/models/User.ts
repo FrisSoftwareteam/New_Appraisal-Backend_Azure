@@ -31,6 +31,7 @@ export interface IUser extends Document {
   category?: string;
   dateConfirmed?: Date;
   dateOfLastPromotion?: Date;
+  dateEmployed?: Date;
   dateOfBirth?: Date;
   previousYearRating?: string;
   mdRecommendationPreviousYear?: string;
@@ -80,6 +81,7 @@ const UserSchema: Schema = new Schema({
   category: { type: String },
   dateConfirmed: { type: Date },
   dateOfLastPromotion: { type: Date },
+  dateEmployed: { type: Date },
   dateOfBirth: { type: Date },
   previousYearRating: { type: String },
   mdRecommendationPreviousYear: { type: String },

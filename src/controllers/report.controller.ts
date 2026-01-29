@@ -180,40 +180,7 @@ export const exportReport = async (req: Request, res: Response) => {
         return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
     };
 
-    // Helper: Find Recommendation Answer
-    // Logic: Look for questions containing "Recommendation" in the text (we might need to fetch template, 
-    // but for now let's rely on finding it in the reviews if we assume standard naming, 
-    // or better, fetch the template to get the specific question ID).
-    // Actually, finding it dynamically per appraisal is safer if templates vary.
-    // We'll search through the reviews for a question text that matches "Recommendation".
-    // Since review only stores questionId, we ideally need the template. 
-    // Optimization: Fetch unique templates used in these appraisals.
-    
-    // Get unique template IDs
-    const templateIds = [...new Set(appraisals.map(a => String(a.template)))];
-    const templates = await mongoose.model('AppraisalTemplate').find({ _id: { $in: templateIds } }).lean();
-    
-    // Map of TemplateID -> { appraiserRecQuestionId, committeeRecQuestionId }
-    const templateRecMap: Record<string, { appraiser: string, committee: string }> = {};
-
-    templates.forEach((t: any) => {
-        let appraiserQ = '';
-        let committeeQ = '';
-        
-        // Flatten questions to find recommendation ones
-        // Assuming 'sections' structure
-        t.sections?.forEach((sec: any) => {
-            sec.questions?.forEach((q: any) => {
-                const text = (q.text || '').toLowerCase(); // Safe check
-                if (text.includes('recommendation') || text.includes('appraiser recommendation')) {
-                    // Start simple: assume if it's in a normal section it's appraiser
-                    appraiserQ = q.id;
-                }
-            });
-        });
-        
-        templateRecMap[String(t._id)] = { appraiser: appraiserQ, committee: committeeQ };
-    });
+    // We will use hardcoded question ID "q21" as requested for recommendations.
 
 
     const reportData = appraisals.map((app: any) => {
@@ -223,46 +190,28 @@ export const exportReport = async (req: Request, res: Response) => {
         // Effective Overall Score (Admin edit overrides)
         const overallRating = app.adminEditedVersion?.overallScore ?? app.overallScore ?? '';
 
-        // Find Recommendations
-        // We iterate through reviews to find the recommendation.
-        // "Appraiser" -> Role "supervisor" or "reviewer" (first level)
-        // "Committee" -> Role "appraisal_committee" or similar
-        
         let appraiserRec = '';
         let committeeRec = '';
 
-        // Sort reviews by date? Or just find by role.
-        // Appraiser Recommendation
-         const appraiserReview = (app.reviews || []).find((r: any) => 
-            ['supervisor', 'reviewer', 'unit_head', 'department_head'].includes(r.reviewerRole) 
-            && r.status === 'completed'
-        );
-        
-        // Committee Recommendation
-        // Check adminEditedVersion first for committee rec if overridden? 
-        // Or look in reviews for committee role.
-        const committeeReview = (app.reviews || []).find((r: any) => 
-            ['appraisal_committee', 'super_admin', 'hr_admin'].includes(r.reviewerRole)
-            && r.isCommittee
-        );
+        // Appraiser Recommendation: Search backward from main reviews for the first "q21"
+        const reviews = app.reviews || [];
+        for (let i = reviews.length - 1; i >= 0; i--) {
+            const resp = (reviews[i].responses || []).find((r: any) => r.questionId === 'q21');
+            if (resp) {
+                appraiserRec = String(resp.response);
+                break;
+            }
+        }
 
-        // Extract answer for "Recommendation" question. 
-        // We need to know WHICH question is the recommendation one.
-        // If we can't be sure of ID, checking question LABEL would be best but we only have ID in review.
-        // We rely on the templateRecMap we built earlier.
-        const tId = String(app.template);
-        const recQId = templateRecMap[tId]?.appraiser; // Assuming same question ID used? 
-        
-        // Helper to find response by ID
-        const findResponse = (review: any, qId: string) => {
-             if (!review || !qId || !review.responses) return '';
-             const resp = review.responses.find((r: any) => r.questionId === qId);
-             return resp ? resp.response : '';
-        };
-
-        // If specific committee question exists, use it. Else assume same question answered by committee.
-        appraiserRec = findResponse(appraiserReview, recQId);
-        committeeRec = findResponse(committeeReview, recQId); // Try same QID for committee
+        // Committee Recommendation: Search backward from adminEditedVersion reviews for the first "q21"
+        const adminReviews = (app.adminEditedVersion?.reviews || []);
+        for (let i = adminReviews.length - 1; i >= 0; i--) {
+            const resp = (adminReviews[i].responses || []).find((r: any) => r.questionId === 'q21');
+            if (resp) {
+                committeeRec = String(resp.response);
+                break;
+            }
+        }
 
         // Fallback: If committee wrote to a different question? (e.g. "Committee Recommendation")
         // This logic might need strict IDs from USER in real world, but this is "best effort" auto-detection.
@@ -275,6 +224,7 @@ export const exportReport = async (req: Request, res: Response) => {
             "Ranking": emp.ranking || '',
             "Date of Birth": formatDate(emp.dateOfBirth),
             "Age": calculateAge(emp.dateOfBirth),
+            "Date Employed": formatDate(emp.dateEmployed),
             "Date Confirmed": formatDate(emp.dateConfirmed),
             "Date of Last Promotion": formatDate(emp.dateOfLastPromotion),
              // Join array items with comma

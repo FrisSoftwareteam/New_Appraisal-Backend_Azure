@@ -57,6 +57,7 @@ export const updateUser = async (req: Request, res: Response) => {
       "division",
       "grade",
       "supervisor",
+      "dateEmployed",
       "avatar",
     ];
     const isValidOperation = updates.every((update) =>
@@ -153,10 +154,11 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
       "dateOfLastPromotion",
       "mdRecommendationPreviousYear",
       "rolesAndResponsibilities",
+      "dateEmployed",
       "dateOfBirth",
     ];
 
-    const dateFields = ["dateConfirmed", "dateOfLastPromotion", "dateOfBirth"];
+    const dateFields = ["dateConfirmed", "dateOfLastPromotion", "dateOfBirth", "dateEmployed"];
 
     for (const row of data as any[]) {
       const email = row.email || row.Email || row.EmailAddress;
@@ -180,6 +182,10 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
         // e.g. "Date of Birth" or "DOB" -> "dateOfBirth"
         if (row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"]) {
            row["dateOfBirth"] = row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"];
+        }
+
+        if (row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"]) {
+           row["dateEmployed"] = row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"];
         }
 
         // Handle Date Confirmed
