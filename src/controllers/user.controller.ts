@@ -58,6 +58,7 @@ export const updateUser = async (req: Request, res: Response) => {
       "grade",
       "supervisor",
       "dateEmployed",
+      "dateOfLastPromotion",
       "avatar",
     ];
     const isValidOperation = updates.every((update) =>
@@ -186,6 +187,10 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
 
         if (row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"]) {
            row["dateEmployed"] = row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"];
+        }
+
+        if (row["Date of Last Promotion"] || row["Date Of Last Promotion"] || row["Date of last promotion"] || row["DateOfLastPromotion"]) {
+           row["dateOfLastPromotion"] = row["Date of Last Promotion"] || row["Date Of Last Promotion"] || row["Date of last promotion"] || row["DateOfLastPromotion"];
         }
 
         // Handle Date Confirmed
