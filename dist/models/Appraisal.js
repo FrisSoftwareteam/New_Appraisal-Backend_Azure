@@ -53,6 +53,21 @@ const AppraisalReviewSchema = new mongoose_1.Schema({
         enum: ["pending", "in_progress", "completed", "skipped"],
         default: "pending"
     },
+    // Committee specific fields
+    isCommittee: { type: Boolean, default: false },
+    committeeMembers: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
+    commendations: [{
+            userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+            comment: { type: String },
+            submittedAt: { type: Date, default: Date.now }
+        }],
+    changeLog: [{
+            questionId: { type: String },
+            oldValue: { type: mongoose_1.Schema.Types.Mixed },
+            newValue: { type: mongoose_1.Schema.Types.Mixed },
+            changedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+            timestamp: { type: Date, default: Date.now }
+        }]
 }, { _id: false });
 const StepAssignmentSchema = new mongoose_1.Schema({
     stepId: { type: String, required: true },
@@ -85,5 +100,31 @@ const AppraisalSchema = new mongoose_1.Schema({
     overallScore: { type: Number },
     finalComments: { type: String },
     rejectionReason: { type: String }, // To store the latest rejection reason for easy UI display
+    // Committee Review Fields
+    lockedQuestions: [{
+            questionId: { type: String, required: true },
+            lockedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+            lockedAt: { type: Date, default: Date.now }
+        }],
+    // Post-Completion Admin Editing
+    adminEditedVersion: {
+        reviews: [AppraisalReviewSchema],
+        overallScore: { type: Number },
+        finalComments: { type: String },
+        editedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+        editedAt: { type: Date },
+        editHistory: [{
+                editor: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+                timestamp: { type: Date, default: Date.now },
+                changes: [{
+                        field: { type: String, required: true },
+                        oldValue: { type: mongoose_1.Schema.Types.Mixed },
+                        newValue: { type: mongoose_1.Schema.Types.Mixed }
+                    }]
+            }]
+    },
+    isAdminEdited: { type: Boolean, default: false },
 }, { timestamps: true });
+// Add index for locking to easily find expired locks if needed
+AppraisalSchema.index({ "lockedQuestions.lockedAt": 1 });
 exports.default = mongoose_1.default.model('Appraisal', AppraisalSchema);

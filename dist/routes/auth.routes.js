@@ -40,8 +40,8 @@ const express_1 = __importDefault(require("express"));
 const authController = __importStar(require("../controllers/auth.controller"));
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = express_1.default.Router();
-router.post('/login', authController.login);
-router.post('/firebase-login', authController.loginWithFirebase);
-router.post('/debug-login', authController.debugLogin); // Debug endpoint for development
-router.get('/me', auth_middleware_1.authenticate, authController.getMe);
+router.post("/login", authController.login);
+router.post("/microsoft-login", authController.loginWithMicrosoft);
+router.post("/debug-login", authController.debugLogin); // Debug endpoint for development
+router.get("/me", auth_middleware_1.authenticate, authController.getMe);
 exports.default = router;

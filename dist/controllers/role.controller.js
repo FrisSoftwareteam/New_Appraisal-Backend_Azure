@@ -45,11 +45,25 @@ exports.updateRole = updateRole;
 const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
     const defaultRoles = [
         {
-            name: "System Admin",
+            name: "Super Admin",
             slug: "super_admin",
             accessLevel: 10,
             description: "Full system access",
             permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: true }
+        },
+        {
+            name: "COO",
+            slug: "coo",
+            accessLevel: 9,
+            description: "Chief Operating Officer access",
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
+        },
+        {
+            name: "Appraisal Committee",
+            slug: "appraisal_committee",
+            accessLevel: 8,
+            description: "Appraisal committee member access",
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: false, systemSettings: false }
         },
         {
             name: "HR Admin",
@@ -57,13 +71,6 @@ const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
             accessLevel: 7,
             description: "HR management access",
             permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
-        },
-        {
-            name: "HR Officer",
-            slug: "hr_officer",
-            accessLevel: 4,
-            description: "HR operational access",
-            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
         },
         {
             name: "Division Head",
@@ -80,9 +87,23 @@ const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
             permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
         },
         {
+            name: "HR Officer",
+            slug: "hr_officer",
+            accessLevel: 4,
+            description: "HR operational access",
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
+        },
+        {
+            name: "Unit Head",
+            slug: "unit_head",
+            accessLevel: 3,
+            description: "Unit level management",
+            permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
+        },
+        {
             name: "Supervisor",
             slug: "supervisor",
-            accessLevel: 3,
+            accessLevel: 2,
             description: "Team supervision",
             permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
         },
@@ -102,7 +123,11 @@ const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
         }
     ];
     for (const roleData of defaultRoles) {
-        yield Role_1.default.findOneAndUpdate({ slug: roleData.slug }, roleData, { upsert: true, new: true });
+        // Only create if it doesn't exist to prevent overwriting custom permissions
+        const existing = yield Role_1.default.findOne({ slug: roleData.slug });
+        if (!existing) {
+            yield Role_1.default.create(roleData);
+        }
     }
     console.log('Roles seeded successfully');
 });

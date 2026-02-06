@@ -36,6 +36,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const AppraisalPeriodSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
+    appraisalType: {
+        type: String,
+        enum: ["annual", "half_year", "quarterly", "monthly", "project", "team", "presentation"],
+        required: true,
+        default: "annual"
+    },
+    periodType: {
+        type: String,
+        enum: ["promotion", "notch_increment", "transfer", "redeployment", "onboarding", "confirmation", "regular"],
+        required: true,
+        default: "regular"
+    },
+    year: { type: Number, required: true },
+    month: { type: Number, min: 1, max: 12 }, // Optional
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     status: {

@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.setDefaultWorkflow = exports.duplicateWorkflow = exports.deleteWorkflow = exports.updateWorkflow = exports.getWorkflowById = exports.getAllWorkflows = exports.createWorkflow = void 0;
+exports.setDefaultWorkflow = exports.duplicateWorkflow = exports.deleteAllWorkflows = exports.deleteWorkflow = exports.updateWorkflow = exports.getWorkflowById = exports.getAllWorkflows = exports.createWorkflow = void 0;
 const AppraisalFlow_1 = __importDefault(require("../models/AppraisalFlow"));
 // Create a new workflow
 const createWorkflow = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -100,6 +100,20 @@ const deleteWorkflow = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.deleteWorkflow = deleteWorkflow;
+const deleteAllWorkflows = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const result = yield AppraisalFlow_1.default.deleteMany({});
+        res.status(200).json({
+            message: 'All workflows deleted successfully',
+            deletedCount: result.deletedCount
+        });
+    }
+    catch (error) {
+        console.error('Error deleting all workflows:', error);
+        res.status(500).json({ message: 'Error deleting all workflows' });
+    }
+});
+exports.deleteAllWorkflows = deleteAllWorkflows;
 // Duplicate workflow
 const duplicateWorkflow = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {

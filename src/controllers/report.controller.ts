@@ -213,8 +213,26 @@ export const exportReport = async (req: Request, res: Response) => {
             }
         }
 
-        // Fallback: If committee wrote to a different question? (e.g. "Committee Recommendation")
-        // This logic might need strict IDs from USER in real world, but this is "best effort" auto-detection.
+        let trainingNeeded = '';
+        let trainingRecommended = '';
+
+        // Training Needed: Latest review with q1766971270364
+        for (let i = reviews.length - 1; i >= 0; i--) {
+            const resp = (reviews[i].responses || []).find((r: any) => r.questionId === 'q1766971270364');
+            if (resp) {
+                trainingNeeded = String(resp.response);
+                break;
+            }
+        }
+
+        // Training Recommended: Latest admin review with q1766971484543
+        for (let i = adminReviews.length - 1; i >= 0; i--) {
+            const resp = (adminReviews[i].responses || []).find((r: any) => r.questionId === 'q1766971484543');
+            if (resp) {
+                trainingRecommended = String(resp.response);
+                break;
+            }
+        }
         
         return {
             "Employee ID": emp.id || 'N/A',
@@ -235,6 +253,8 @@ export const exportReport = async (req: Request, res: Response) => {
             "Overall Appraisal Rating": overallRating !== '' ? overallRating : 'Not Graded',
             "Appraiser Recommendation": appraiserRec || '-',
             "Committee Recommendation": committeeRec || '-',
+            "Training Needed by Employee": trainingNeeded || '-',
+            "Training Recommended by Appraiser": trainingRecommended || '-',
             "Status": app.status || 'Unknown'
         };
     }).filter(Boolean); // Remove nulls

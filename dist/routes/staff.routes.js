@@ -9,16 +9,24 @@ const staff_controller_1 = require("../controllers/staff.controller");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = express_1.default.Router();
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
+// Get staff statistics
+router.get('/stats', auth_middleware_1.authenticate, staff_controller_1.getStaffStats);
 // Get all staff with optional filters
 router.get('/', auth_middleware_1.authenticate, staff_controller_1.getAllStaff);
+// Pending staff routes
+router.get('/pending', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.getPendingStaff);
+router.put('/pending/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.resolvePendingStaff);
+router.delete('/pending/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.deletePendingStaff);
+// Bulk actions
+router.delete('/all', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.deleteAllStaff);
 // Update staff member
-router.patch('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), staff_controller_1.updateStaff);
+router.patch('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.updateStaff);
 // Delete staff member
-router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), staff_controller_1.deleteStaff);
+router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.deleteStaff);
 // Exclude staff from current appraisal cycle
-router.post('/:id/exclude', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), staff_controller_1.excludeFromCycle);
+router.post('/:id/exclude', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.excludeFromCycle);
 // Import staff from Excel
-router.post('/import', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), upload.single('file'), staff_controller_1.importStaff);
+router.post('/import', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), upload.single('file'), staff_controller_1.importStaff);
 // Get unique filter options
 router.get('/filters', auth_middleware_1.authenticate, staff_controller_1.getStaffFilters);
 exports.default = router;

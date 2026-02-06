@@ -43,5 +43,5 @@ const router = express_1.default.Router();
 // Public for now to allow fetching on load, or authenticated
 router.get('/', auth_middleware_1.authenticate, roleController.getRoles);
 // Only admins can update roles
-router.put('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), roleController.updateRole);
+router.put('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('systemSettings'), roleController.updateRole);
 exports.default = router;
