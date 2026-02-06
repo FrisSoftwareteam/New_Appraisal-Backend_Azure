@@ -35,8 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const UserSchema = new mongoose_1.Schema({
-    email: { type: String, required: true, unique: true },
-    password: { type: String }, // Store hashed password
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: { type: String },
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     role: {
@@ -62,6 +62,27 @@ const UserSchema = new mongoose_1.Schema({
     unit: { type: String },
     grade: { type: String, required: true },
     jobTitle: { type: String },
+    designation: { type: String },
+    gender: { type: String },
+    ranking: { type: String },
+    category: { type: String },
+    dateConfirmed: { type: Date },
+    dateOfLastPromotion: { type: Date },
+    dateEmployed: { type: Date },
+    dateOfBirth: { type: Date },
+    previousYearRating: { type: String },
+    mdRecommendationPreviousYear: { type: String },
+    educationalQualifications: [{ type: String }],
+    professionalCertifications: [{ type: String }],
+    trainingsAttended: [{
+            title: { type: String },
+            year: { type: Number }
+        }],
+    careerDevelopment: [{
+            note: { type: String },
+            year: { type: Number }
+        }],
+    rolesAndResponsibilities: { type: String },
     supervisor: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     avatar: { type: String },
     isFirstLogin: { type: Boolean, default: true },

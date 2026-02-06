@@ -39,11 +39,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const userController = __importStar(require("../controllers/user.controller"));
 const auth_middleware_1 = require("../middleware/auth.middleware");
+const multer_1 = __importDefault(require("multer"));
 const router = express_1.default.Router();
+const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Only admins can manage users
-router.post('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['system_admin', 'hr_admin']), userController.createUser);
-router.get('/', auth_middleware_1.authenticate, userController.getUsers); // Maybe restrict listing too?
-router.get('/:id', auth_middleware_1.authenticate, userController.getUserById);
-router.patch('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['system_admin', 'hr_admin']), userController.updateUser);
-router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['system_admin', 'hr_admin']), userController.deleteUser);
+router.post("/", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), userController.createUser);
+router.post("/bulk-update", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), upload.single("file"), userController.bulkUpdateUsers);
+router.get("/", auth_middleware_1.authenticate, userController.getUsers); // Maybe restrict listing too?
+router.get("/by-email/:email", auth_middleware_1.authenticate, userController.getUserByEmail);
+router.get("/:id", auth_middleware_1.authenticate, userController.getUserById);
+router.patch("/:id", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), userController.updateUser);
+router.delete("/:id", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), userController.deleteUser);
 exports.default = router;

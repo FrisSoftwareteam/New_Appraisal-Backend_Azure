@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authorize = exports.authenticate = void 0;
+exports.requirePermission = exports.authorize = exports.authenticate = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = __importDefault(require("../models/User"));
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -45,3 +45,33 @@ const authorize = (roles) => {
     };
 };
 exports.authorize = authorize;
+const Role_1 = __importDefault(require("../models/Role"));
+const requirePermission = (permission) => {
+    return (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            if (!req.user) {
+                return res.status(401).send({ error: 'Please authenticate.' });
+            }
+            // Super admin always has access
+            if (req.user.role === 'super_admin') {
+                return next();
+            }
+            const role = yield Role_1.default.findOne({ slug: req.user.role });
+            if (!role) {
+                return res.status(403).send({ error: 'Role not found.' });
+            }
+            // Check if permission exists and is true
+            // We use 'any' here because permissions is a Map/Object in the schema
+            const permissions = role.permissions;
+            if (!permissions || !permissions[permission]) {
+                return res.status(403).send({ error: 'Insufficient permissions.' });
+            }
+            next();
+        }
+        catch (error) {
+            console.error('Permission check error:', error);
+            res.status(500).send({ error: 'Internal server error checking permissions.' });
+        }
+    });
+};
+exports.requirePermission = requirePermission;

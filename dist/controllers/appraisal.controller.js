@@ -12,14 +12,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAssignedAppraisals = exports.getAllAppraisals = exports.getPendingAppraisals = exports.getMyAppraisals = exports.getAppraisalById = exports.acceptAppraisal = exports.rejectAppraisal = exports.submitReview = exports.initiateAppraisal = void 0;
+exports.adminEditAppraisal = exports.saveCommendation = exports.saveCommitteeReview = exports.unlockQuestion = exports.lockQuestion = exports.deleteAllAppraisals = exports.deleteAppraisal = exports.getAssignedAppraisals = exports.getAllAppraisals = exports.getPendingAppraisals = exports.getMyAppraisals = exports.getAppraisalById = exports.acceptAppraisal = exports.rejectAppraisal = exports.submitReview = exports.initiateAppraisal = void 0;
 const Appraisal_1 = __importDefault(require("../models/Appraisal"));
 const AppraisalTemplate_1 = __importDefault(require("../models/AppraisalTemplate"));
 const AppraisalFlow_1 = __importDefault(require("../models/AppraisalFlow"));
+const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
 const User_1 = __importDefault(require("../models/User"));
+const PeriodStaffAssignment_1 = __importDefault(require("../models/PeriodStaffAssignment"));
+const audit_controller_1 = require("./audit.controller");
 // Initiate an appraisal for an employee
 const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c;
     try {
         const { employeeId, templateId, workflowId, period, assignments } = req.body;
         // Verify existence
@@ -79,6 +82,20 @@ const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 }]
         });
         yield appraisal.save();
+        // Update PeriodStaffAssignment to mark as initialized
+        const periodDoc = yield AppraisalPeriod_1.default.findOne({ name: period });
+        if (periodDoc) {
+            yield PeriodStaffAssignment_1.default.updateOne({
+                employee: employeeId,
+                period: periodDoc._id
+            }, {
+                isInitialized: true,
+                workflow: workflowId,
+                template: templateId
+            });
+        }
+        // Audit Log
+        yield (0, audit_controller_1.createAuditLog)((_c = (_b = req.user) === null || _b === void 0 ? void 0 : _b._id) === null || _c === void 0 ? void 0 : _c.toString(), 'create', 'appraisal', appraisal._id.toString(), `Initiated appraisal for ${employee.firstName} ${employee.lastName} - ${period}`, undefined, { templateId, workflowId, period });
         res.status(201).json(appraisal);
     }
     catch (error) {
@@ -89,13 +106,29 @@ const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, functi
 exports.initiateAppraisal = initiateAppraisal;
 // Submit Review (Generic for any step)
 const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     try {
         const { id } = req.params;
         const { stepId, responses, overallScore, comments } = req.body;
         const appraisal = yield Appraisal_1.default.findById(id).populate('workflow');
         if (!appraisal)
             return res.status(404).json({ message: 'Appraisal not found' });
+        // Check if appraisal is completed and user is admin/committee
+        if (appraisal.status === 'completed') {
+            const isAdminOrCommittee = ['hr_admin', 'appraisal_committee', 'super_admin'].includes(((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) || '');
+            if (isAdminOrCommittee) {
+                return res.status(400).json({
+                    message: 'This appraisal is completed. Please use the admin edit endpoint to modify it.',
+                    hint: `PUT /api/appraisals/${id}/admin-edit`,
+                    useAdminEdit: true
+                });
+            }
+            else {
+                return res.status(400).json({
+                    message: 'This appraisal is already completed and cannot be modified.'
+                });
+            }
+        }
         // Find the step in the workflow to verify rank/order
         const workflow = appraisal.workflow;
         const currentStepConfig = workflow.steps.find((s) => (s._id || s.id).toString() === stepId);
@@ -110,15 +143,15 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             return res.status(400).json({ message: 'Step assignment not found' });
         }
         // Verify user is the assigned user (or admin)
-        if (((_a = assignment.assignedUser) === null || _a === void 0 ? void 0 : _a.toString()) !== ((_c = (_b = req.user) === null || _b === void 0 ? void 0 : _b._id) === null || _c === void 0 ? void 0 : _c.toString()) && ((_d = req.user) === null || _d === void 0 ? void 0 : _d.role) !== 'super_admin') {
+        if (((_b = assignment.assignedUser) === null || _b === void 0 ? void 0 : _b.toString()) !== ((_d = (_c = req.user) === null || _c === void 0 ? void 0 : _c._id) === null || _d === void 0 ? void 0 : _d.toString()) && ((_e = req.user) === null || _e === void 0 ? void 0 : _e.role) !== 'super_admin') {
             return res.status(403).json({ message: 'You are not assigned to this step' });
         }
         // Update or add review
         const reviewIndex = appraisal.reviews.findIndex(r => r.stepId === stepId);
         const reviewData = {
             stepId,
-            reviewerId: (_e = req.user) === null || _e === void 0 ? void 0 : _e._id,
-            reviewerRole: (_f = req.user) === null || _f === void 0 ? void 0 : _f.role,
+            reviewerId: (_f = req.user) === null || _f === void 0 ? void 0 : _f._id,
+            reviewerRole: (_g = req.user) === null || _g === void 0 ? void 0 : _g.role,
             responses,
             overallScore,
             comments,
@@ -138,21 +171,10 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Logic: Find rank of current step, find next rank
         const currentRank = currentStepConfig.rank;
         const nextStep = workflow.steps.find((s) => s.rank > currentRank); // Simplified: assumes sorted ranks
-        // Special Logic: If Step 1 (index 0) was completed by someone OTHER than the employee,
-        // and the next step is NOT the employee, we must pause for Employee Acceptance.
-        const isFirstStep = appraisal.currentStep === 0;
-        const isReviewerEmployee = ((_h = (_g = req.user) === null || _g === void 0 ? void 0 : _g._id) === null || _h === void 0 ? void 0 : _h.toString()) === appraisal.employee.toString();
-        // Check if next step is assigned to employee
-        let nextStepIsEmployee = false;
-        if (nextStep) {
-            // We need to check the assignment for the next step to be sure
-            const nextStepId = nextStep._id || nextStep.id;
-            const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-            if (nextAssignment && ((_j = nextAssignment.assignedUser) === null || _j === void 0 ? void 0 : _j.toString()) === appraisal.employee.toString()) {
-                nextStepIsEmployee = true;
-            }
-        }
-        if (isFirstStep && !isReviewerEmployee && !nextStepIsEmployee) {
+        const isReviewerEmployee = ((_j = (_h = req.user) === null || _h === void 0 ? void 0 : _h._id) === null || _j === void 0 ? void 0 : _j.toString()) === appraisal.employee.toString();
+        // If the reviewer was NOT the employee, we must pause for Employee Acceptance
+        // This applies to EVERY step done by someone else (Manager, HR, etc.)
+        if (!isReviewerEmployee) {
             // Pause for Employee Acceptance
             appraisal.status = 'pending_employee_review';
             appraisal.history.push({
@@ -161,19 +183,23 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 timestamp: new Date(),
                 comment: 'Appraisal paused for Employee Acceptance'
             });
-        }
-        else if (nextStep) {
-            appraisal.currentStep = appraisal.currentStep + 1; // Or set based on index
-            appraisal.status = 'in_progress';
-            // Update next step status to in_progress? Optional, but good for UI
-            const nextStepId = nextStep._id || nextStep.id;
-            const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-            if (nextAssignment) {
-                nextAssignment.status = 'in_progress';
-            }
+            // We do NOT increment currentStep here. 
+            // It will be incremented when the employee accepts.
         }
         else {
-            appraisal.status = 'completed';
+            // Employee submitted their own step, proceed to next
+            if (nextStep) {
+                appraisal.currentStep = appraisal.currentStep + 1;
+                appraisal.status = 'in_progress';
+                // Update next step status to in_progress
+                const nextStepId = nextStep._id || nextStep.id;
+                const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+                if (nextAssignment) {
+                    nextAssignment.status = 'in_progress';
+                }
+            }
+            // If no next step, keep status as 'in_progress' - waiting for next reviewer
+            // Appraisal should only complete via acceptAppraisal after employee accepts final step
         }
         appraisal.history.push({
             action: 'review_submitted',
@@ -184,6 +210,8 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Clear any previous rejection reason
         appraisal.rejectionReason = undefined;
         yield appraisal.save();
+        // Audit Log
+        yield (0, audit_controller_1.createAuditLog)((_o = (_m = req.user) === null || _m === void 0 ? void 0 : _m._id) === null || _o === void 0 ? void 0 : _o.toString(), 'submit_review', 'appraisal', appraisal._id.toString(), `Review submitted for step: ${currentStepConfig.name} by ${(_p = req.user) === null || _p === void 0 ? void 0 : _p.role}`, undefined, { stepId, overallScore });
         res.json(appraisal);
     }
     catch (error) {
@@ -194,7 +222,7 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.submitReview = submitReview;
 // Reject Appraisal (Request Changes)
 const rejectAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
     try {
         const { id } = req.params;
         const { reason } = req.body;
@@ -245,6 +273,8 @@ const rejectAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function
                 comment: `Appraisal returned: ${reason}`
             });
         }
+        // Audit Log
+        yield (0, audit_controller_1.createAuditLog)((_d = (_c = req.user) === null || _c === void 0 ? void 0 : _c._id) === null || _d === void 0 ? void 0 : _d.toString(), 'appraisal_rejected', 'appraisal', appraisal._id.toString(), `Appraisal rejected/returned by ${(_e = req.user) === null || _e === void 0 ? void 0 : _e.role}: ${reason}`);
         yield appraisal.save();
         res.json(appraisal);
     }
@@ -255,7 +285,7 @@ const rejectAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function
 exports.rejectAppraisal = rejectAppraisal;
 // Accept Appraisal (Final Sign-off or Intermediate Acceptance)
 const acceptAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     try {
         const { id } = req.params;
         const appraisal = yield Appraisal_1.default.findById(id).populate('workflow');
@@ -266,38 +296,56 @@ const acceptAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function
             return res.status(403).json({ message: 'Only the employee can accept the appraisal' });
         }
         if (appraisal.status === 'pending_employee_review') {
-            // Intermediate acceptance: Move to next step
-            appraisal.status = 'in_progress';
-            appraisal.currentStep = appraisal.currentStep + 1;
-            // Update next step status
             const workflow = appraisal.workflow;
-            // We assume currentStep was NOT incremented when it went to pending_employee_review
-            // So now we increment it.
-            // We need to find the next step to set its status
-            if (workflow && workflow.steps[appraisal.currentStep]) {
-                const nextStep = workflow.steps[appraisal.currentStep];
-                const nextStepId = nextStep._id || nextStep.id;
-                const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
-                if (nextAssignment) {
-                    nextAssignment.status = 'in_progress';
-                }
+            const nextStepIndex = appraisal.currentStep + 1;
+            // Check if this was the final step
+            if (nextStepIndex >= workflow.steps.length) {
+                // Workflow Complete
+                appraisal.status = 'completed';
+                appraisal.currentStep = nextStepIndex;
+                appraisal.history.push({
+                    action: 'accepted_final',
+                    actor: (_d = req.user) === null || _d === void 0 ? void 0 : _d._id,
+                    timestamp: new Date(),
+                    comment: 'Appraisal review accepted and process finalized'
+                });
+                // Audit Log
+                yield (0, audit_controller_1.createAuditLog)((_f = (_e = req.user) === null || _e === void 0 ? void 0 : _e._id) === null || _f === void 0 ? void 0 : _f.toString(), 'appraisal_completed', 'appraisal', appraisal._id.toString(), 'Appraisal finalized and accepted by employee');
             }
-            appraisal.history.push({
-                action: 'accepted_intermediate',
-                actor: (_d = req.user) === null || _d === void 0 ? void 0 : _d._id,
-                timestamp: new Date(),
-                comment: 'Employee accepted the appraisal review'
-            });
+            else {
+                // Intermediate acceptance: Move to next step
+                appraisal.status = 'in_progress';
+                appraisal.currentStep = nextStepIndex;
+                // Update next step status
+                if (workflow && workflow.steps[nextStepIndex]) {
+                    const nextStep = workflow.steps[nextStepIndex];
+                    const nextStepId = nextStep._id || nextStep.id;
+                    const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+                    if (nextAssignment) {
+                        nextAssignment.status = 'in_progress';
+                    }
+                }
+                appraisal.history.push({
+                    action: 'accepted_intermediate',
+                    actor: (_g = req.user) === null || _g === void 0 ? void 0 : _g._id,
+                    timestamp: new Date(),
+                    comment: 'Employee accepted the appraisal review'
+                });
+                // Audit Log
+                yield (0, audit_controller_1.createAuditLog)((_j = (_h = req.user) === null || _h === void 0 ? void 0 : _h._id) === null || _j === void 0 ? void 0 : _j.toString(), 'appraisal_accepted_intermediate', 'appraisal', appraisal._id.toString(), 'Employee accepted intermediate review', undefined, { currentStep: appraisal.currentStep });
+            }
         }
         else {
-            // Final acceptance
+            // Final acceptance (Direct, if not via pending_employee_review)
             appraisal.status = 'completed';
             appraisal.history.push({
                 action: 'accepted_final',
-                actor: (_e = req.user) === null || _e === void 0 ? void 0 : _e._id,
+                actor: (_k = req.user) === null || _k === void 0 ? void 0 : _k._id,
                 timestamp: new Date(),
                 comment: 'Appraisal accepted/finalized'
             });
+            // Audit Log
+            yield (0, audit_controller_1.createAuditLog)((_m = (_l = req.user) === null || _l === void 0 ? void 0 : _l._id) === null || _m === void 0 ? void 0 : _m.toString(), 'appraisal_completed', 'appraisal', appraisal._id.toString(), 'Appraisal finalized and accepted by employee');
         }
         yield appraisal.save();
         res.json(appraisal);
@@ -329,7 +377,9 @@ const getMyAppraisals = (req, res) => __awaiter(void 0, void 0, void 0, function
     var _a;
     try {
         const appraisals = yield Appraisal_1.default.find({ employee: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id })
-            .populate('template', 'name')
+            .populate('employee', 'firstName lastName email department division grade role')
+            .populate('template')
+            .populate('workflow')
             .sort({ createdAt: -1 });
         res.json(appraisals);
     }
@@ -416,3 +466,289 @@ const getAssignedAppraisals = (req, res) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.getAssignedAppraisals = getAssignedAppraisals;
+// Delete Single Appraisal (Admin - returns employee to pending initiation)
+const deleteAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        // Find the appraisal first to get employee and period info
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal) {
+            return res.status(404).json({ message: 'Appraisal not found' });
+        }
+        const employeeId = appraisal.employee;
+        const periodName = appraisal.period;
+        // Delete the appraisal
+        yield Appraisal_1.default.findByIdAndDelete(id);
+        // Find the period to get its ID
+        const period = yield AppraisalPeriod_1.default.findOne({ name: periodName });
+        if (period) {
+            // Reset the PeriodStaffAssignment to return employee to pending initiation
+            yield PeriodStaffAssignment_1.default.updateOne({
+                employee: employeeId,
+                period: period._id
+            }, {
+                isInitialized: false
+                // Keep workflow and template for history
+            });
+        }
+        // Audit Log
+        if (req.user) {
+            yield (0, audit_controller_1.createAuditLog)(req.user._id.toString(), 'delete', 'appraisal', id, `Deleted appraisal for employee ${employeeId} in period ${periodName}`, undefined, { employeeId, period: periodName });
+        }
+        res.status(200).json({
+            message: 'Appraisal deleted successfully. Employee returned to pending initiation.',
+            employeeId,
+            period: periodName
+        });
+    }
+    catch (error) {
+        console.error('Error deleting appraisal:', error);
+        res.status(500).json({ message: 'Error deleting appraisal', error });
+    }
+});
+exports.deleteAppraisal = deleteAppraisal;
+// Delete All Appraisals (Admin Cleanup)
+const deleteAllAppraisals = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const result = yield Appraisal_1.default.deleteMany({});
+        res.status(200).json({
+            message: 'All appraisals deleted successfully',
+            deletedCount: result.deletedCount
+        });
+        // Audit Log
+        if (result.deletedCount > 0) {
+            // Since this is an admin action and user might not be in req.user if called internally (but it is an endpoint),
+            // we check req.user.
+            if (req.user) {
+                yield (0, audit_controller_1.createAuditLog)(req.user._id.toString(), 'delete', 'appraisal', 'ALL', `Deleted all appraisals (${result.deletedCount} records)`, undefined, { deletedCount: result.deletedCount });
+            }
+        }
+    }
+    catch (error) {
+        console.error('Error deleting all appraisals:', error);
+        res.status(500).json({ message: 'Error deleting all appraisals' });
+    }
+});
+exports.deleteAllAppraisals = deleteAllAppraisals;
+// Lock a question for editing
+const lockQuestion = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    try {
+        const { id } = req.params;
+        const { questionId } = req.body;
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a._id;
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal)
+            return res.status(404).json({ message: 'Appraisal not found' });
+        // Check if already locked by someone else
+        const existingLock = (_b = appraisal.lockedQuestions) === null || _b === void 0 ? void 0 : _b.find(l => l.questionId === questionId);
+        if (existingLock) {
+            // Check if lock is expired (e.g., 5 minutes)
+            const lockTime = new Date(existingLock.lockedAt).getTime();
+            const now = new Date().getTime();
+            const isExpired = (now - lockTime) > 5 * 60 * 1000;
+            if (!isExpired && existingLock.lockedBy.toString() !== (userId === null || userId === void 0 ? void 0 : userId.toString())) {
+                return res.status(409).json({
+                    message: 'Question is locked by another user',
+                    lockedBy: existingLock.lockedBy
+                });
+            }
+            // If expired or owned by user, we update/refresh it below
+        }
+        // Remove existing lock for this question if any
+        if (appraisal.lockedQuestions) {
+            appraisal.lockedQuestions = appraisal.lockedQuestions.filter(l => l.questionId !== questionId);
+        }
+        else {
+            appraisal.lockedQuestions = [];
+        }
+        // Add new lock
+        appraisal.lockedQuestions.push({
+            questionId,
+            lockedBy: userId,
+            lockedAt: new Date()
+        });
+        yield appraisal.save();
+        res.json({ message: 'Question locked successfully', lockedAt: new Date() });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error locking question', error });
+    }
+});
+exports.lockQuestion = lockQuestion;
+// Unlock a question
+const unlockQuestion = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { id } = req.params;
+        const { questionId } = req.body;
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a._id;
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal)
+            return res.status(404).json({ message: 'Appraisal not found' });
+        if (appraisal.lockedQuestions) {
+            // Only allow unlocking if user owns the lock or is admin
+            const lock = appraisal.lockedQuestions.find(l => l.questionId === questionId);
+            if (lock && lock.lockedBy.toString() === (userId === null || userId === void 0 ? void 0 : userId.toString())) {
+                appraisal.lockedQuestions = appraisal.lockedQuestions.filter(l => l.questionId !== questionId);
+                yield appraisal.save();
+            }
+        }
+        res.json({ message: 'Question unlocked successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error unlocking question', error });
+    }
+});
+exports.unlockQuestion = unlockQuestion;
+// Save Committee Review (Shared Marks)
+const saveCommitteeReview = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f, _g;
+    try {
+        const { id } = req.params;
+        const { stepId, responses } = req.body; // responses: [{ questionId, response, score, comment }]
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a._id;
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal)
+            return res.status(404).json({ message: 'Appraisal not found' });
+        const review = appraisal.reviews.find(r => r.stepId === stepId);
+        if (!review)
+            return res.status(404).json({ message: 'Review step not found' });
+        if (!review.isCommittee) {
+            // Initialize committee fields if not present (migration/fallback)
+            review.isCommittee = true;
+            review.committeeMembers = review.committeeMembers || [];
+            review.changeLog = review.changeLog || [];
+        }
+        // Add user to committee members if not present
+        if (!((_b = review.committeeMembers) === null || _b === void 0 ? void 0 : _b.some(m => m.toString() === (userId === null || userId === void 0 ? void 0 : userId.toString())))) {
+            (_c = review.committeeMembers) === null || _c === void 0 ? void 0 : _c.push(userId);
+        }
+        // Process updates and log changes
+        responses.forEach((update) => {
+            var _a;
+            const existingResponseIndex = review.responses.findIndex(r => r.questionId === update.questionId);
+            let oldValue = null;
+            if (existingResponseIndex >= 0) {
+                oldValue = review.responses[existingResponseIndex].score; // Tracking score changes primarily
+                review.responses[existingResponseIndex] = Object.assign(Object.assign({}, review.responses[existingResponseIndex]), update);
+            }
+            else {
+                review.responses.push(update);
+            }
+            // Log change if score changed
+            if (update.score !== undefined && update.score !== oldValue) {
+                (_a = review.changeLog) === null || _a === void 0 ? void 0 : _a.push({
+                    questionId: update.questionId,
+                    oldValue,
+                    newValue: update.score,
+                    changedBy: userId,
+                    timestamp: new Date()
+                });
+            }
+        });
+        // Update timestamp
+        review.submittedAt = new Date(); // Update last modified time
+        review.status = 'in_progress';
+        yield appraisal.save();
+        // Audit Log
+        yield (0, audit_controller_1.createAuditLog)((_e = (_d = req.user) === null || _d === void 0 ? void 0 : _d._id) === null || _e === void 0 ? void 0 : _e.toString(), 'committee_review', 'appraisal', appraisal._id.toString(), `Committee review updated by ${(_g = (_f = req.user) === null || _f === void 0 ? void 0 : _f._id) === null || _g === void 0 ? void 0 : _g.toString()}`, undefined, { stepId, updates: responses.length });
+        res.json(appraisal);
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error saving committee review', error });
+    }
+});
+exports.saveCommitteeReview = saveCommitteeReview;
+// Save Individual Commendation
+const saveCommendation = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { id } = req.params;
+        const { stepId, comment } = req.body;
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a._id;
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal)
+            return res.status(404).json({ message: 'Appraisal not found' });
+        const review = appraisal.reviews.find(r => r.stepId === stepId);
+        if (!review)
+            return res.status(404).json({ message: 'Review step not found' });
+        review.commendations = review.commendations || [];
+        // Check if user already has a commendation
+        const existingIndex = review.commendations.findIndex(c => c.userId.toString() === (userId === null || userId === void 0 ? void 0 : userId.toString()));
+        if (existingIndex >= 0) {
+            review.commendations[existingIndex].comment = comment;
+            review.commendations[existingIndex].submittedAt = new Date();
+        }
+        else {
+            review.commendations.push({
+                userId: userId,
+                comment,
+                submittedAt: new Date()
+            });
+        }
+        yield appraisal.save();
+        res.json(appraisal);
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error saving commendation', error });
+    }
+});
+exports.saveCommendation = saveCommendation;
+// Admin Edit Appraisal (Post-completion override)
+const adminEditAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f;
+    try {
+        const { id } = req.params;
+        const { reviews, overallScore, finalComments } = req.body;
+        // Permission check
+        if (!['hr_admin', 'appraisal_committee', 'super_admin'].includes(((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) || '')) {
+            return res.status(403).json({ message: 'Not authorized to edit completed appraisals' });
+        }
+        const appraisal = yield Appraisal_1.default.findById(id);
+        if (!appraisal)
+            return res.status(404).json({ message: 'Appraisal not found' });
+        // Ensure appraisal is completed (or pending_employee_review if we want to allow editing then too, but usually completed)
+        // The frontend checks for 'completed', so we'll enforce that or at least allow it.
+        // Prepare edit history entry
+        // Ideally we diff changes, but for now we just log the event
+        const editEntry = {
+            editor: (_b = req.user) === null || _b === void 0 ? void 0 : _b._id,
+            timestamp: new Date(),
+            changes: [] // TODO: Detailed diffing if needed
+        };
+        // Update adminEditedVersion
+        if (!appraisal.adminEditedVersion) {
+            appraisal.adminEditedVersion = {
+                reviews: [],
+                editHistory: []
+            };
+        }
+        // Save old state to history if needed? Or just append to editHistory list
+        appraisal.adminEditedVersion.editHistory.push(editEntry);
+        // Update fields
+        appraisal.adminEditedVersion.reviews = reviews;
+        appraisal.adminEditedVersion.overallScore = overallScore;
+        appraisal.adminEditedVersion.finalComments = finalComments;
+        appraisal.adminEditedVersion.editedBy = req.user._id;
+        appraisal.adminEditedVersion.editedAt = new Date();
+        appraisal.isAdminEdited = true;
+        // Optional: Should we update the MAIN fields too?
+        // If reports use main fields, we might want to sync them OR ensure reports check adminEditedVersion.
+        // The implementation of reports I saw earlier DOES check adminEditedVersion.
+        // So we keep them separate to preserve original history?
+        // However, for simplified querying, some systems overwrite.
+        // Based on the frontend logic: "Use admin-edited reviews if present; otherwise use original reviews"
+        // And report logic: "const overallRating = app.adminEditedVersion?.overallScore ?? app.overallScore"
+        // So keeping them separate is correct for this architecture.
+        yield appraisal.save();
+        // Audit Log
+        yield (0, audit_controller_1.createAuditLog)((_d = (_c = req.user) === null || _c === void 0 ? void 0 : _c._id) === null || _d === void 0 ? void 0 : _d.toString(), 'admin_edit', 'appraisal', appraisal._id.toString(), `Appraisal admin-edited by ${(_e = req.user) === null || _e === void 0 ? void 0 : _e.firstName} ${(_f = req.user) === null || _f === void 0 ? void 0 : _f.lastName}`);
+        res.json(appraisal);
+    }
+    catch (error) {
+        console.error('Error in admin edit:', error);
+        res.status(500).json({ message: 'Error saving admin edits', error });
+    }
+});
+exports.adminEditAppraisal = adminEditAppraisal;

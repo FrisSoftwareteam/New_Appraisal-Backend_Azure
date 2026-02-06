@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createAuditLog = exports.getAuditLogs = void 0;
+exports.deleteAllAuditLogs = exports.createAuditLog = exports.getAuditLogs = void 0;
 const AuditLog_1 = __importDefault(require("../models/AuditLog"));
 // Get audit logs with filtering and pagination
 const getAuditLogs = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -76,3 +76,14 @@ changes, metadata) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.createAuditLog = createAuditLog;
+// Delete all audit logs (super_admin only)
+const deleteAllAuditLogs = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        yield AuditLog_1.default.deleteMany({});
+        res.json({ message: 'All audit logs cleared successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error clearing audit logs', error });
+    }
+});
+exports.deleteAllAuditLogs = deleteAllAuditLogs;

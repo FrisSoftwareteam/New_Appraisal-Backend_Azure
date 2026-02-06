@@ -43,8 +43,13 @@ const AppraisalQuestionSchema = new mongoose_1.Schema({
         required: true
     },
     category: { type: String, required: true },
+    subsection: { type: String },
     weight: { type: Number, default: 0 },
-    options: [{ type: String }],
+    options: [{
+            label: { type: String },
+            score: { type: Number }
+        }],
+    ratingLabels: { type: Map, of: String },
     maxScore: { type: Number, default: 5 },
     isRequired: { type: Boolean, default: true },
     isScored: { type: Boolean, default: true },
@@ -58,7 +63,7 @@ const AppraisalTemplateSchema = new mongoose_1.Schema({
     assignedUsers: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
     status: {
         type: String,
-        enum: ['draft', 'pending_approval', 'active', 'archived'],
+        enum: ['draft', 'pending_approval', 'active', 'archived', 'rejected'],
         default: 'draft'
     },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },

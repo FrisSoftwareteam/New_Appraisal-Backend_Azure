@@ -42,4 +42,6 @@ const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = express_1.default.Router();
 // Only admins and HR should see audit logs
 router.get('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin', 'hr_admin']), auditController.getAuditLogs);
+// Only super_admin can clear audit logs
+router.delete('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)(['super_admin']), auditController.deleteAllAuditLogs);
 exports.default = router;

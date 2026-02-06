@@ -109,17 +109,52 @@ export const getUserByEmail = async (req: Request, res: Response) => {
 
 // Helper to safely parse Excel dates or strings
 const parseExcelDate = (value: any): Date | undefined => {
-  if (!value) return undefined;
-  // If it's a number (Excel serial date)
+  if (!value || value === 'NA' || value === 'N/A') return undefined;
+  
   if (typeof value === 'number') {
-    // Excel base date is 1900-01-01. JS is 1970-01-01.
-    // Standard conversion formula: (value - 25569) * 86400 * 1000
-    // 25569 is the number of days between 1900-01-01 and 1970-01-01
-    return new Date((value - 25569) * 86400 * 1000);
+    return new Date(Math.round((value - 25569) * 86400 * 1000));
   }
-  // If it's a string, try standard Date parsing
+
+  const str = String(value).trim();
+  
+  // 1. Try to match regional formats like DD/MM/YYYY or MM/DD/YYYY, ignoring time parts
+  // Matches "1/4/2021", "1-4-2021", "01.04.2021", "1/4/2021 12:00:00 AM", etc.
+  const datePartMatch = str.match(/^(\d+)[/.\-](\d+)[/.\-](\d+)/);
+  if (datePartMatch) {
+    const p1 = parseInt(datePartMatch[1], 10);
+    const p2 = parseInt(datePartMatch[2], 10);
+    let year = parseInt(datePartMatch[3], 10);
+    
+    if (year < 100) year += (year < 50 ? 2000 : 1900);
+    
+    let day, month;
+    if (p1 > 12) {
+      day = p1;
+      month = p2 - 1;
+    } else if (p2 > 12) {
+      day = p2;
+      month = p1 - 1;
+    } else {
+      // Default to DMY (Nigeria/Europe)
+      day = p1;
+      month = p2 - 1;
+    }
+    
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 2. Fallback to native translation for ISO strings or other formats
   const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? undefined : parsed;
+  if (!isNaN(parsed.getTime())) {
+    let year = parsed.getFullYear();
+    if (year < 100) {
+      parsed.setFullYear(year + (year < 50 ? 2000 : 1900));
+    }
+    return parsed;
+  }
+
+  return undefined;
 };
 
 export const bulkUpdateUsers = async (req: Request, res: Response) => {
@@ -129,9 +164,23 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(sheet);
+    console.log(`[BulkUpdate] Workbook sheets: ${workbook.SheetNames.join(', ')}`);
+    
+    // Find first sheet that actually has data
+    let sheetName = workbook.SheetNames[0];
+    let data: any[] = [];
+    
+    for (const name of workbook.SheetNames) {
+      const sheet = workbook.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json(sheet);
+      if (rows.length > 0) {
+        sheetName = name;
+        data = rows;
+        break;
+      }
+    }
+
+    console.log(`[BulkUpdate] Using sheet: "${sheetName}" with ${data.length} rows`);
 
     const results = {
       success: 0,
@@ -161,8 +210,18 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
 
     const dateFields = ["dateConfirmed", "dateOfLastPromotion", "dateOfBirth", "dateEmployed"];
 
+    let firstRowLogged = false;
     for (const row of data as any[]) {
-      const email = row.email || row.Email || row.EmailAddress;
+      const rowKeys = Object.keys(row);
+      if (!firstRowLogged) {
+        console.log(`[BulkUpdate] Row keys found: ${rowKeys.join(' | ')}`);
+        firstRowLogged = true;
+      }
+      const emailKey = rowKeys.find(k => {
+        const nk = k.toLowerCase().replace(/\s/g, '');
+        return nk === 'email' || nk === 'emailaddress' || nk === 'e-mail';
+      });
+      const email = emailKey ? row[emailKey] : null;
 
       if (!email) {
         results.failed++;
@@ -171,7 +230,7 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
       }
 
       try {
-        const user = await User.findOne({ email: email.toLowerCase().trim() }); // Trim email for safety
+        const user = await User.findOne({ email: String(email).toLowerCase().trim() });
 
         if (!user) {
           results.failed++;
@@ -179,70 +238,96 @@ export const bulkUpdateUsers = async (req: Request, res: Response) => {
           continue;
         }
 
-        // Pre-process row to handle field synonyms
-        // e.g. "Date of Birth" or "DOB" -> "dateOfBirth"
-        if (row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"]) {
-           row["dateOfBirth"] = row["Date of Birth"] || row["Date of birth"] || row["DOB"] || row["DateOfBirth"];
-        }
+        // Map Excel keys to model fields
+        const normalizedRow: any = {};
+        const foundHeaders: string[] = [];
+        const unmatchedKeys: string[] = [];
+        
+        rowKeys.forEach(key => {
+          const cleanKey = key.toLowerCase().replace(/[^a-z]/g, '');
+          
+          let targetField = '';
+          if (cleanKey === 'firstname' || (cleanKey.includes('first') && cleanKey.includes('name'))) targetField = 'firstName';
+          if (cleanKey === 'lastname' || (cleanKey.includes('last') && cleanKey.includes('name') && !cleanKey.includes('promotion'))) targetField = 'lastName';
+          if (cleanKey.includes('fullname')) {
+             const val = String(row[key]).trim();
+             const parts = val.split(' ');
+             normalizedRow['firstName'] = parts[0];
+             normalizedRow['lastName'] = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+             foundHeaders.push(`${key} -> firstName/lastName`);
+             return;
+          }
+          if (cleanKey === 'department') targetField = 'department';
+          if (cleanKey === 'division') targetField = 'division';
+          if (cleanKey === 'unit') targetField = 'unit';
+          if (cleanKey === 'grade') targetField = 'grade';
+          if (cleanKey === 'jobtitle') targetField = 'jobTitle';
+          if (cleanKey === 'designation') targetField = 'designation';
+          if (cleanKey === 'gender') targetField = 'gender';
+          if (cleanKey === 'ranking') targetField = 'ranking';
+          if (cleanKey === 'category') targetField = 'category';
+          if (cleanKey === 'dateconfirmed' || cleanKey.includes('confirmed')) targetField = 'dateConfirmed';
+          if (cleanKey === 'dateoflastpromotion' || (cleanKey.includes('last') && cleanKey.includes('promotion'))) targetField = 'dateOfLastPromotion';
+          if (cleanKey === 'dateemployed' || cleanKey.includes('employed') || cleanKey.includes('employment')) targetField = 'dateEmployed';
+          if (cleanKey === 'dateofbirth' || cleanKey === 'dob' || cleanKey.includes('birth')) targetField = 'dateOfBirth';
+          if (cleanKey === 'mdrecommendation' || cleanKey.includes('mdrecommendation')) targetField = 'mdRecommendationPreviousYear';
+          if (cleanKey === 'rolesandresponsibilities' || cleanKey.includes('roles')) targetField = 'rolesAndResponsibilities';
 
-        if (row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"]) {
-           row["dateEmployed"] = row["Date Employed"] || row["Date employed"] || row["dateEmployed"] || row["DateEmployed"];
-        }
-
-        if (row["Date of Last Promotion"] || row["Date Of Last Promotion"] || row["Date of last promotion"] || row["DateOfLastPromotion"]) {
-           row["dateOfLastPromotion"] = row["Date of Last Promotion"] || row["Date Of Last Promotion"] || row["Date of last promotion"] || row["DateOfLastPromotion"];
-        }
-
-        // Handle Date Confirmed
-        if (row["Date Confirmed"]) {
-           row["dateConfirmed"] = row["Date Confirmed"];
-        }
-
-        // Handle Ranking
-        if (row["Ranking"]) {
-           row["ranking"] = row["Ranking"];
-        }
+          if (targetField) {
+            normalizedRow[targetField] = row[key];
+            foundHeaders.push(`${key} -> ${targetField}`);
+          } else {
+            unmatchedKeys.push(key);
+          }
+        });
 
         let hasUpdates = false;
+        const updatedFields: string[] = [];
+        const skipReasons: string[] = [];
 
         allowedUpdates.forEach((field) => {
-          const rawValue = row[field];
+          const rawValue = normalizedRow[field];
           
           if (rawValue !== undefined && rawValue !== null && rawValue !== "") {
-             // Handle dates specifically
              if (dateFields.includes(field)) {
                 const parsedDate = parseExcelDate(rawValue);
                 if (parsedDate) {
-                  (user as any)[field] = parsedDate;
-                  hasUpdates = true;
+                  const currentVal = (user as any)[field];
+                  const existingTime = currentVal ? new Date(currentVal).getTime() : 0;
+                  const newTime = parsedDate.getTime();
+
+                  if (Math.abs(existingTime - newTime) > 1000) {
+                    user.set(field, parsedDate);
+                    hasUpdates = true;
+                    updatedFields.push(`${field} (Date: ${parsedDate.toISOString()})`);
+                  } else {
+                    skipReasons.push(`${field} (Date already same: ${existingTime})`);
+                  }
                 } else {
-                  // Log warning but don't fail entire user? 
-                  // For now, we skip invalid date updates to be safe.
-                  console.warn(`Invalid date for user ${email}, field ${field}: ${rawValue}`);
+                  skipReasons.push(`${field} (Date parsing failed for: ${rawValue})`);
                 }
              } else {
-                // Determine if we should allow partial overwrites?
-                // The prompt implies we are UPDATING info.
-                // We will trim strings to be safe.
                 const valueToSave = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
-                
-                // Only update if changed
                 if ((user as any)[field] !== valueToSave) {
-                   (user as any)[field] = valueToSave;
+                   user.set(field, valueToSave);
                    hasUpdates = true;
+                   updatedFields.push(field);
+                } else {
+                   skipReasons.push(`${field} (String already same: ${valueToSave})`);
                 }
              }
           }
         });
 
         if (hasUpdates) {
+          console.log(`[BulkUpdate] Pending save for ${email}. Modified: ${user.modifiedPaths().join(', ')}`);
           await user.save();
+          console.log(`[BulkUpdate] Successfully saved ${email}. Fields: ${updatedFields.join(', ')}`);
           results.success++;
         } else {
-          // No changes needed is effectively a success
+          console.log(`[BulkUpdate] No changes for ${email}. Matched: ${foundHeaders.join(', ')} | Unmatched: ${unmatchedKeys.join(', ')} | Skips: ${skipReasons.slice(0, 3).join(', ')}...`);
           results.success++; 
         }
-
       } catch (error: any) {
         results.failed++;
         results.errors.push({ email, reason: error.message || "Update failed" });

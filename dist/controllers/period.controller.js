@@ -12,17 +12,37 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.removeStaff = exports.assignStaff = exports.getAssignedStaff = exports.deletePeriod = exports.updatePeriod = exports.getPeriodById = exports.getPeriods = exports.createPeriod = void 0;
+exports.removeStaff = exports.assignStaff = exports.getAssignedStaff = exports.deleteAllPeriods = exports.deletePeriod = exports.updatePeriod = exports.getPeriodById = exports.getPeriods = exports.createPeriod = void 0;
 const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
+const PeriodStaffAssignment_1 = __importDefault(require("../models/PeriodStaffAssignment"));
 const createPeriod = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
-        const period = new AppraisalPeriod_1.default(Object.assign(Object.assign({}, req.body), { createdBy: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id }));
+        // Validate required fields
+        const { name, startDate, endDate, year } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ message: 'Period name is required' });
+        }
+        if (!startDate) {
+            return res.status(400).json({ message: 'Start date is required' });
+        }
+        if (!endDate) {
+            return res.status(400).json({ message: 'End date is required' });
+        }
+        if (!year) {
+            return res.status(400).json({ message: 'Year is required' });
+        }
+        const period = new AppraisalPeriod_1.default(Object.assign(Object.assign({}, req.body), { name: name.trim(), createdBy: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id }));
         yield period.save();
         res.status(201).send(period);
     }
     catch (error) {
-        res.status(400).send(error);
+        console.error('Error creating period:', error);
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map((err) => err.message).join(', ');
+            return res.status(400).json({ message: `Validation error: ${messages}` });
+        }
+        res.status(400).json({ message: error.message || 'Error creating period' });
     }
 });
 exports.createPeriod = createPeriod;
@@ -68,6 +88,8 @@ const deletePeriod = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         if (!period) {
             return res.status(404).send();
         }
+        // Also delete all PeriodStaffAssignment records for this period
+        yield PeriodStaffAssignment_1.default.deleteMany({ period: period._id });
         res.send(period);
     }
     catch (error) {
@@ -75,6 +97,22 @@ const deletePeriod = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.deletePeriod = deletePeriod;
+const deleteAllPeriods = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const result = yield AppraisalPeriod_1.default.deleteMany({});
+        // Also delete all PeriodStaffAssignment records
+        yield PeriodStaffAssignment_1.default.deleteMany({});
+        res.status(200).json({
+            message: 'All periods deleted successfully',
+            deletedCount: result.deletedCount
+        });
+    }
+    catch (error) {
+        console.error('Error deleting all periods:', error);
+        res.status(500).json({ message: 'Error deleting all periods' });
+    }
+});
+exports.deleteAllPeriods = deleteAllPeriods;
 // Get assigned staff for a period
 const getAssignedStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -104,6 +142,25 @@ const assignStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         // Add new employees, avoiding duplicates
         const newEmployees = employeeIds.filter(id => !period.assignedEmployees.includes(id));
         period.assignedEmployees.push(...newEmployees);
+        // Create PeriodStaffAssignment records for new employees
+        const assignments = [];
+        for (const employeeId of newEmployees) {
+            // Check if assignment already exists
+            let assignment = yield PeriodStaffAssignment_1.default.findOne({
+                period: period._id,
+                employee: employeeId
+            });
+            if (!assignment) {
+                assignment = yield PeriodStaffAssignment_1.default.create({
+                    period: period._id,
+                    employee: employeeId,
+                    workflow: null,
+                    template: null,
+                    isInitialized: false
+                });
+            }
+            assignments.push(assignment);
+        }
         yield period.save();
         yield period.populate('assignedEmployees', 'firstName lastName email department role avatar');
         res.json(period.assignedEmployees);
@@ -123,6 +180,11 @@ const removeStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return res.status(404).json({ message: 'Period not found' });
         }
         period.assignedEmployees = period.assignedEmployees.filter(id => id.toString() !== employeeId);
+        // Also remove the PeriodStaffAssignment record
+        yield PeriodStaffAssignment_1.default.deleteOne({
+            period: period._id,
+            employee: employeeId
+        });
         yield period.save();
         yield period.populate('assignedEmployees', 'firstName lastName email department role avatar');
         res.json(period.assignedEmployees);
