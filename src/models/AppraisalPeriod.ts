@@ -48,4 +48,6 @@ const AppraisalPeriodSchema: Schema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 
+AppraisalPeriodSchema.index({ status: 1, startDate: -1 });
+
 export default mongoose.model<IAppraisalPeriod>('AppraisalPeriod', AppraisalPeriodSchema);

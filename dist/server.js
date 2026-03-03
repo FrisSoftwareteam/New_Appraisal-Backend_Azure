@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -19,7 +20,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 8000;
+const PORT = Number((_a = process.env.PORT) !== null && _a !== void 0 ? _a : 8000);
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/hr-appraisal';
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
@@ -35,7 +36,17 @@ const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
 const periodStaffAssignment_routes_1 = __importDefault(require("./routes/periodStaffAssignment.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const appraisal_admin_edit_routes_1 = __importDefault(require("./routes/appraisal-admin-edit.routes"));
+const attendance_routes_1 = __importDefault(require("./routes/attendance.routes"));
+const training_routes_1 = __importDefault(require("./routes/training.routes"));
 const error_middleware_1 = require("./middleware/error.middleware");
+const cloudinary_1 = require("./config/cloudinary");
+const cloudinaryConfigured = (0, cloudinary_1.configureCloudinary)();
+if (cloudinaryConfigured) {
+    console.log('Cloudinary configured for attendance photo uploads.');
+}
+else {
+    console.warn('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.');
+}
 // Middleware
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -61,6 +72,8 @@ app.use('/api/notifications', notification_routes_1.default);
 app.use('/api/audit', audit_routes_1.default);
 app.use('/api', periodStaffAssignment_routes_1.default);
 app.use('/api/reports', report_routes_1.default);
+app.use('/api/attendance', attendance_routes_1.default);
+app.use('/api/training', training_routes_1.default);
 app.get('/', (req, res) => {
     res.json({ message: 'HR Appraisal System API is running' });
 });
@@ -108,8 +121,19 @@ const mongooseOptions = {
     autoIndex: false // Don't build indexes in production
 };
 // Start server regardless of DB connection status
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+});
+server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+        console.error(`Server failed to start: port ${PORT} is already in use.`);
+        return;
+    }
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+        console.error(`Server failed to start: insufficient permission to bind on port ${PORT}.`);
+        return;
+    }
+    console.error('Server failed to start:', error);
 });
 // Global error handler - MUST be after all routes
 app.use(error_middleware_1.errorHandler);

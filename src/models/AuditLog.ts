@@ -23,4 +23,6 @@ const AuditLogSchema: Schema = new Schema({
   metadata: { type: Map, of: Schema.Types.Mixed },
 }, { timestamps: true });
 
+AuditLogSchema.index({ createdAt: -1 });
+
 export default mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);

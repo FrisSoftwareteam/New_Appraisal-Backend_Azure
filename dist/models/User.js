@@ -87,4 +87,5 @@ const UserSchema = new mongoose_1.Schema({
     avatar: { type: String },
     isFirstLogin: { type: Boolean, default: true },
 }, { timestamps: true });
+UserSchema.index({ role: 1 });
 exports.default = mongoose_1.default.model('User', UserSchema);

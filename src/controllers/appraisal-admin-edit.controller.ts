@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import Appraisal from '../models/Appraisal';
+import AppraisalPeriod from '../models/AppraisalPeriod';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createAuditLog } from './audit.controller';
+import { getAttendanceInsightsForRange } from '../services/attendance.service';
+import { toDateKey } from '../utils/attendance-metrics';
 
 // Get appraisal with appropriate version based on user role
 export const getAppraisalForUser = async (req: AuthRequest, res: Response) => {
@@ -41,6 +44,10 @@ export const getAppraisalForUser = async (req: AuthRequest, res: Response) => {
 
     // Convert to plain object to ensure all nested data is properly serialized
     const appraisalData = appraisal.toObject();
+    const attendanceInsights = await getAppraisalAttendanceInsights(appraisal);
+    if (attendanceInsights) {
+      (appraisalData as any).attendanceInsights = attendanceInsights;
+    }
 
     // If employee (and not also an admin), return original version (hide admin edits)
     if (isEmployee && !isAdmin) {
@@ -59,6 +66,36 @@ export const getAppraisalForUser = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Error fetching appraisal:', error);
     res.status(500).json({ message: 'Error fetching appraisal', error });
+  }
+};
+
+const getAppraisalAttendanceInsights = async (appraisal: any) => {
+  try {
+    const employeeId = appraisal?.employee?._id?.toString?.();
+    const periodName = typeof appraisal?.period === 'string' ? appraisal.period : '';
+    if (!employeeId || !periodName) {
+      return null;
+    }
+
+    const period = await AppraisalPeriod.findOne({ name: periodName }).select('name startDate endDate');
+    if (!period?.startDate || !period?.endDate) {
+      return null;
+    }
+
+    const startDate = toDateKey(period.startDate);
+    const endDate = toDateKey(period.endDate);
+    const insights = await getAttendanceInsightsForRange(employeeId, startDate, endDate);
+
+    return {
+      periodName: period.name,
+      startDate: insights.startDate,
+      endDate: insights.endDate,
+      summary: insights.summary,
+      monthlyBreakdown: insights.monthlyBreakdown
+    };
+  } catch (error) {
+    console.error('Error computing appraisal attendance insights:', error);
+    return null;
   }
 };
 
