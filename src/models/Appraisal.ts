@@ -188,5 +188,10 @@ const AppraisalSchema: Schema = new Schema({
 
 // Add index for locking to easily find expired locks if needed
 AppraisalSchema.index({ "lockedQuestions.lockedAt": 1 });
+// Optimizes latest-appraisal lookups by period and employee.
+AppraisalSchema.index({ period: 1, employee: 1, createdAt: -1 });
+// Dashboard-heavy query paths.
+AppraisalSchema.index({ status: 1, updatedAt: -1 });
+AppraisalSchema.index({ employee: 1, status: 1, updatedAt: -1 });
 
 export default mongoose.model<IAppraisal>('Appraisal', AppraisalSchema);

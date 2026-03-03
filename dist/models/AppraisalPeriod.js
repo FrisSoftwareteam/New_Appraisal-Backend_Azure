@@ -61,4 +61,5 @@ const AppraisalPeriodSchema = new mongoose_1.Schema({
     assignedEmployees: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
+AppraisalPeriodSchema.index({ status: 1, startDate: -1 });
 exports.default = mongoose_1.default.model('AppraisalPeriod', AppraisalPeriodSchema);

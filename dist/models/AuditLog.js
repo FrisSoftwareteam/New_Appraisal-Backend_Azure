@@ -43,4 +43,5 @@ const AuditLogSchema = new mongoose_1.Schema({
     changes: { type: Map, of: new mongoose_1.Schema({ old: mongoose_1.Schema.Types.Mixed, new: mongoose_1.Schema.Types.Mixed }, { _id: false }) },
     metadata: { type: Map, of: mongoose_1.Schema.Types.Mixed },
 }, { timestamps: true });
+AuditLogSchema.index({ createdAt: -1 });
 exports.default = mongoose_1.default.model('AuditLog', AuditLogSchema);

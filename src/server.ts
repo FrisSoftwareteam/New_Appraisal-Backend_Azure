@@ -8,7 +8,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = Number(process.env.PORT ?? 8000);
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/hr-appraisal';
 
 import authRoutes from './routes/auth.routes';
@@ -25,7 +25,19 @@ import auditRoutes from './routes/audit.routes';
 import periodStaffAssignmentRoutes from './routes/periodStaffAssignment.routes';
 import reportRoutes from './routes/report.routes';
 import appraisalAdminEditRoutes from './routes/appraisal-admin-edit.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import trainingRoutes from './routes/training.routes';
 import { errorHandler, checkDatabaseConnection } from './middleware/error.middleware';
+import { configureCloudinary } from './config/cloudinary';
+
+const cloudinaryConfigured = configureCloudinary();
+if (cloudinaryConfigured) {
+  console.log('Cloudinary configured for attendance photo uploads.');
+} else {
+  console.warn(
+    'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.'
+  );
+}
 
 // Middleware
 app.use((req, res, next) => {
@@ -53,6 +65,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api', periodStaffAssignmentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/training', trainingRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });
@@ -112,8 +126,22 @@ const mongooseOptions = {
 };
 
 // Start server regardless of DB connection status
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Server failed to start: port ${PORT} is already in use.`);
+    return;
+  }
+
+  if (error.code === 'EACCES' || error.code === 'EPERM') {
+    console.error(`Server failed to start: insufficient permission to bind on port ${PORT}.`);
+    return;
+  }
+
+  console.error('Server failed to start:', error);
 });
 
 // Global error handler - MUST be after all routes

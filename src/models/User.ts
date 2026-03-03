@@ -101,4 +101,6 @@ const UserSchema: Schema = new Schema({
   isFirstLogin: { type: Boolean, default: true },
 }, { timestamps: true });
 
+UserSchema.index({ role: 1 });
+
 export default mongoose.model<IUser>('User', UserSchema);
