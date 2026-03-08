@@ -1,7 +1,18 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import AppraisalPeriod from '../models/AppraisalPeriod';
 import PeriodStaffAssignment from '../models/PeriodStaffAssignment';
+import Appraisal from '../models/Appraisal';
 import { AuthRequest } from '../middleware/auth.middleware';
+
+const APPRAISAL_PENDING_STATUSES = [
+  'setup',
+  'self_appraisal',
+  'manager_appraisal',
+  'review',
+  'in_progress',
+  'pending_employee_review',
+];
 
 export const createPeriod = async (req: AuthRequest, res: Response) => {
   try {
@@ -44,9 +55,69 @@ export const createPeriod = async (req: AuthRequest, res: Response) => {
 
 export const getPeriods = async (req: Request, res: Response) => {
   try {
-    const periods = await AppraisalPeriod.find({});
-    res.send(periods);
+    const periods = await AppraisalPeriod.find({}).sort({ startDate: -1 }).lean();
+    const periodIds = periods.map((p) => p._id);
+    const periodNames = periods.map((p) => p.name);
+
+    const [assignmentCounts, appraisalStats] = await Promise.all([
+      PeriodStaffAssignment.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
+        { $match: { period: { $in: periodIds } } },
+        { $group: { _id: '$period', count: { $sum: 1 } } },
+      ]),
+      Appraisal.aggregate<{
+        _id: string;
+        completed: number;
+        inProgress: number;
+      }>([
+        { $match: { period: { $in: periodNames } } },
+        {
+          $group: {
+            _id: '$period',
+            completed: {
+              $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
+            },
+            inProgress: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', APPRAISAL_PENDING_STATUSES] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    const assignmentByPeriod = new Map(
+      assignmentCounts.map((r) => [r._id.toString(), r.count])
+    );
+    const appraisalByPeriod = new Map(
+      appraisalStats.map((r) => [
+        r._id,
+        { completed: r.completed, inProgress: r.inProgress },
+      ])
+    );
+
+    const periodsWithStats = periods.map((period) => {
+      const assigned =
+        assignmentByPeriod.get(period._id.toString()) ?? 0;
+      const appraisal = appraisalByPeriod.get(period.name) ?? {
+        completed: 0,
+        inProgress: 0,
+      };
+      return {
+        ...period,
+        totalAssigned: assigned,
+        completed: appraisal.completed,
+        inProgress: appraisal.inProgress,
+      };
+    });
+
+    res.send(periodsWithStats);
   } catch (error) {
+    console.error('Error fetching periods:', error);
     res.status(500).send(error);
   }
 };

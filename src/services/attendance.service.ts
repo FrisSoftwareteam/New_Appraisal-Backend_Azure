@@ -19,11 +19,16 @@ import {
   isValidDateKey,
   parseCutoffTime,
   summarizeAttendance,
-  toDateKey
+  toDateKey,
+  toDateKeyInTimeZone
 } from '../utils/attendance-metrics';
 
 const CUTOFF_SETTING_KEY = 'attendance_cutoff_time';
 const DEFAULT_CUTOFF_TIME = '08:00';
+const ATTENDANCE_TIMEZONE =
+  typeof process.env.ATTENDANCE_TIMEZONE === 'string' && process.env.ATTENDANCE_TIMEZONE.trim()
+    ? process.env.ATTENDANCE_TIMEZONE.trim()
+    : 'Africa/Lagos';
 const CAPTURE_ENABLED_SETTING_KEY = 'attendance_capture_enabled';
 const DEFAULT_CAPTURE_ENABLED = false;
 const WEEKENDS_AUTO_PAUSED = parseBooleanEnv(process.env.ATTENDANCE_WEEKENDS_AUTO_PAUSED, true);
@@ -61,6 +66,10 @@ export interface SerializedAttendanceRecord {
   photoPublicId?: string;
   checkOutPhotoUrl?: string;
   checkOutPhotoPublicId?: string;
+  checkOutLocationLabel?: string;
+  checkOutLatitude?: number;
+  checkOutLongitude?: number;
+  checkOutAccuracy?: number;
   flagStatus: AttendanceFlagStatus;
   flagReason?: string;
   flaggedAt?: string;
@@ -99,6 +108,10 @@ export function serializeAttendanceRecord(record: IAttendanceRecord): Serialized
     photoPublicId: record.photoPublicId ?? undefined,
     checkOutPhotoUrl: record.checkOutPhotoUrl ?? undefined,
     checkOutPhotoPublicId: record.checkOutPhotoPublicId ?? undefined,
+    checkOutLocationLabel: record.checkOutLocationLabel ?? undefined,
+    checkOutLatitude: record.checkOutLatitude ?? undefined,
+    checkOutLongitude: record.checkOutLongitude ?? undefined,
+    checkOutAccuracy: record.checkOutAccuracy ?? undefined,
     flagStatus: record.flagStatus,
     flagReason: record.flagReason ?? undefined,
     flaggedAt: record.flaggedAt ? record.flaggedAt.toISOString() : undefined,
@@ -248,7 +261,11 @@ export async function getAttendanceInsightsForMonth(
 }
 
 export function getTodayDateKey() {
-  return toDateKey(new Date());
+  return toDateKeyInTimeZone(new Date(), ATTENDANCE_TIMEZONE);
+}
+
+export function getAttendanceTimezone() {
+  return ATTENDANCE_TIMEZONE;
 }
 
 function getWorkDurationHours(record: IAttendanceRecord) {

@@ -92,6 +92,30 @@ export function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Returns the local date (YYYY-MM-DD) in the given IANA timezone.
+ * Use this for "today" and date-based logic so cutoff and weekend rules
+ * align with the organisation's timezone (e.g. Africa/Lagos for Nigeria).
+ */
+export function toDateKeyInTimeZone(date: Date, timeZone: string): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(date);
+    const year = parts.find((p) => p.type === 'year')?.value ?? '';
+    const month = parts.find((p) => p.type === 'month')?.value ?? '';
+    const day = parts.find((p) => p.type === 'day')?.value ?? '';
+    const result = `${year}-${month}-${day}`;
+    return DATE_KEY_REGEX.test(result) ? result : date.toISOString().slice(0, 10);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
 export function isValidDateKey(value: string) {
   return DATE_KEY_REGEX.test(value);
 }

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Response } from 'express';
 import Appraisal from '../models/Appraisal';
 import AppraisalPeriod from '../models/AppraisalPeriod';
+import { getLastRelevantPeriodFilter } from '../utils/period-utils';
 import TrainingAssignment, {
   TRAINING_ASSIGNMENT_STATUSES,
   TRAINING_DELIVERY_MODES,
@@ -596,9 +597,7 @@ async function resolveLatestRecommendationPeriod(requestedPeriod?: string) {
     return requestedPeriod;
   }
 
-  const latestConfiguredPeriod = await AppraisalPeriod.findOne({
-    status: { $in: ['active', 'extended', 'closed'] }
-  })
+  const latestConfiguredPeriod = await AppraisalPeriod.findOne(getLastRelevantPeriodFilter())
     .sort({ endDate: -1, createdAt: -1 })
     .select('name')
     .lean();
