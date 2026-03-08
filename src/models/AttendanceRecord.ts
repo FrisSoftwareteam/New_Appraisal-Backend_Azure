@@ -19,6 +19,10 @@ export interface IAttendanceRecord extends Document {
   photoPublicId?: string;
   checkOutPhotoUrl?: string;
   checkOutPhotoPublicId?: string;
+  checkOutLocationLabel?: string;
+  checkOutLatitude?: number;
+  checkOutLongitude?: number;
+  checkOutAccuracy?: number;
   flagStatus: AttendanceFlagStatus;
   flagReason?: string;
   flaggedAt?: Date;
@@ -53,6 +57,10 @@ const AttendanceRecordSchema: Schema = new Schema(
     photoPublicId: { type: String },
     checkOutPhotoUrl: { type: String },
     checkOutPhotoPublicId: { type: String },
+    checkOutLocationLabel: { type: String },
+    checkOutLatitude: { type: Number },
+    checkOutLongitude: { type: Number },
+    checkOutAccuracy: { type: Number },
     flagStatus: {
       type: String,
       enum: ['clear', 'flagged', 'resolved'],

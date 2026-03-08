@@ -4,6 +4,7 @@ import User, { UserRole } from '../models/User';
 import PendingStaff from '../models/PendingStaff';
 import Appraisal from '../models/Appraisal';
 import AppraisalPeriod from '../models/AppraisalPeriod';
+import { getNonElapsedActivePeriodFilter } from '../utils/period-utils';
 import AppraisalTemplate from '../models/AppraisalTemplate';
 import { AuthRequest } from '../middleware/auth.middleware';
 
@@ -584,8 +585,8 @@ export const getStaffStats = async (req: Request, res: Response) => {
   try {
     const totalEmployees = await User.countDocuments({ role: { $nin: ['guest', 'super_admin'] } });
     
-    // Find active period
-    const activePeriod = await AppraisalPeriod.findOne({ status: 'active' });
+    // Find active period (excludes elapsed: endDate >= today)
+    const activePeriod = await AppraisalPeriod.findOne(getNonElapsedActivePeriodFilter());
     
     let activeInCycle = 0;
     let pendingAssignment = 0;

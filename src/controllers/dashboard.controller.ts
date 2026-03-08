@@ -5,6 +5,7 @@ import Appraisal from '../models/Appraisal';
 import AppraisalPeriod from '../models/AppraisalPeriod';
 import AuditLog from '../models/AuditLog';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { getLastRelevantPeriodFilter, getNonElapsedActivePeriodFilter } from '../utils/period-utils';
 
 const ADMIN_ROLES = new Set([
   'hr_admin',
@@ -79,6 +80,15 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 };
 
 const getOrganizationStats = async (res: Response) => {
+  // Resolve "last period" for score distribution: most recent by startDate,
+  // excluding elapsed periods (active/extended with endDate < today)
+  const lastPeriod = await AppraisalPeriod.findOne(getLastRelevantPeriodFilter())
+    .sort({ startDate: -1 })
+    .select('name')
+    .lean();
+
+  const lastPeriodName = lastPeriod?.name ?? null;
+
   const [
     totalEmployees,
     statusCounts,
@@ -144,25 +154,33 @@ const getOrganizationStats = async (res: Response) => {
       .populate('employee', 'firstName lastName department avatar')
       .populate('workflow', 'name')
       .lean(),
-    Appraisal.aggregate<ScoreDistributionRow>([
-      { $match: { status: 'completed' } },
-      {
-        $group: {
-          _id: {
-            $switch: {
-              branches: [
-                { case: { $gte: ['$overallScore', 4.5] }, then: '4.5 - 5.0' },
-                { case: { $gte: ['$overallScore', 4.0] }, then: '4.0 - 4.4' },
-                { case: { $gte: ['$overallScore', 3.5] }, then: '3.5 - 3.9' },
-                { case: { $gte: ['$overallScore', 3.0] }, then: '3.0 - 3.4' }
-              ],
-              default: 'Below 3.0'
+    lastPeriodName
+      ? Appraisal.aggregate<ScoreDistributionRow>([
+          { $match: { status: 'completed', period: lastPeriodName } },
+          {
+            $addFields: {
+              effectiveScore: { $ifNull: ['$adminEditedVersion.overallScore', '$overallScore'] }
             }
           },
-          count: { $sum: 1 }
-        }
-      }
-    ]),
+          { $match: { effectiveScore: { $type: 'number' } } },
+          {
+            $group: {
+              _id: {
+                $switch: {
+                  branches: [
+                    { case: { $gte: ['$effectiveScore', 4.5] }, then: '4.5 - 5.0' },
+                    { case: { $gte: ['$effectiveScore', 4.0] }, then: '4.0 - 4.4' },
+                    { case: { $gte: ['$effectiveScore', 3.5] }, then: '3.5 - 3.9' },
+                    { case: { $gte: ['$effectiveScore', 3.0] }, then: '3.0 - 3.4' }
+                  ],
+                  default: 'Below 3.0'
+                }
+              },
+              count: { $sum: 1 }
+            }
+          }
+        ])
+      : Promise.resolve([]),
     AppraisalPeriod.find()
       .select('_id name description status startDate endDate')
       .sort({ startDate: -1 })
@@ -202,10 +220,10 @@ const getOrganizationStats = async (res: Response) => {
     })),
     workflow: buildWorkflowStats(statusCounts),
     pendingReviews: recentPending,
-    scoreDistribution: scoreDistribution.map((item) => ({
-      range: item._id,
-      count: item.count
-    })),
+    scoreDistribution: lastPeriodName
+      ? scoreDistribution.map((item) => ({ range: item._id, count: item.count }))
+      : [],
+    scoreDistributionPeriod: lastPeriodName,
     periods,
     recentActivity,
     isPersonal: false
@@ -245,7 +263,7 @@ const getPersonalStats = async (res: Response, userId: mongoose.Types.ObjectId |
       .populate('employee', 'firstName lastName department avatar')
       .populate('workflow', 'name')
       .lean(),
-    AppraisalPeriod.find({ status: { $in: ['active', 'extended'] } })
+    AppraisalPeriod.find(getNonElapsedActivePeriodFilter())
       .select('_id name description status startDate endDate')
       .sort({ startDate: -1 })
       .limit(5)

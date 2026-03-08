@@ -20,6 +20,7 @@ import {
   getAttendanceCutoffTime,
   getAttendanceInsightsForMonth,
   getAttendanceInsightsForRange,
+  getAttendanceTimezone,
   getTodayDateKey,
   serializeAttendanceRecord,
   setAttendanceCaptureEnabled,
@@ -58,6 +59,10 @@ interface DailyAttendanceRow {
   photoPublicId?: string;
   checkOutPhotoUrl?: string;
   checkOutPhotoPublicId?: string;
+  checkOutLocationLabel?: string;
+  checkOutLatitude?: number;
+  checkOutLongitude?: number;
+  checkOutAccuracy?: number;
   flagStatus: AttendanceFlagStatus;
   flagReason?: string;
   flaggedAt?: string;
@@ -101,7 +106,7 @@ export const checkIn = async (req: AuthRequest, res: Response) => {
 
     const now = new Date();
     const cutoffTime = await getAttendanceCutoffTime();
-    const checkInStatus = resolveCheckInStatus(now, cutoffTime);
+    const checkInStatus = resolveCheckInStatus(now, cutoffTime, getAttendanceTimezone());
     const userName = getUserName(req.user.firstName, req.user.lastName, req.user.email);
     const photoUrl =
       typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
@@ -177,6 +182,14 @@ export const checkOut = async (req: AuthRequest, res: Response) => {
       typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
     const photoPublicId =
       typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
+    const checkOutLocationLabel =
+      typeof req.body?.locationLabel === 'string' ? req.body.locationLabel.trim() : undefined;
+    const checkOutLatitude =
+      typeof req.body?.latitude === 'number' ? req.body.latitude : undefined;
+    const checkOutLongitude =
+      typeof req.body?.longitude === 'number' ? req.body.longitude : undefined;
+    const checkOutAccuracy =
+      typeof req.body?.accuracy === 'number' ? req.body.accuracy : undefined;
 
     if (!photoUrl) {
       return res.status(400).json({ message: 'Photo evidence is required for check-out.' });
@@ -185,6 +198,10 @@ export const checkOut = async (req: AuthRequest, res: Response) => {
     record.checkOutAt = new Date();
     record.checkOutPhotoUrl = photoUrl;
     record.checkOutPhotoPublicId = photoPublicId || undefined;
+    if (checkOutLocationLabel) record.checkOutLocationLabel = checkOutLocationLabel;
+    if (checkOutLatitude !== undefined) record.checkOutLatitude = checkOutLatitude;
+    if (checkOutLongitude !== undefined) record.checkOutLongitude = checkOutLongitude;
+    if (checkOutAccuracy !== undefined) record.checkOutAccuracy = checkOutAccuracy;
     await record.save();
 
     return res.json({
@@ -452,6 +469,10 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
         photoPublicId: serialized.photoPublicId,
         checkOutPhotoUrl: serialized.checkOutPhotoUrl,
         checkOutPhotoPublicId: serialized.checkOutPhotoPublicId,
+        checkOutLocationLabel: serialized.checkOutLocationLabel,
+        checkOutLatitude: serialized.checkOutLatitude,
+        checkOutLongitude: serialized.checkOutLongitude,
+        checkOutAccuracy: serialized.checkOutAccuracy,
         flagStatus: serialized.flagStatus,
         flagReason: serialized.flagReason,
         flaggedAt: serialized.flaggedAt,

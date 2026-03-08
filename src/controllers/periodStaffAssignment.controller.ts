@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import PeriodStaffAssignment from '../models/PeriodStaffAssignment';
 import AppraisalPeriod from '../models/AppraisalPeriod';
+import { getNonElapsedActivePeriodFilter } from '../utils/period-utils';
 import User from '../models/User';
 import AppraisalFlow from '../models/AppraisalFlow';
 import AppraisalTemplate from '../models/AppraisalTemplate';
@@ -253,8 +254,8 @@ export const getPendingInitialization = async (req: AuthRequest, res: Response) 
 // Get all pending initializations across all active periods
 export const getAllPendingInitializations = async (req: AuthRequest, res: Response) => {
   try {
-    // Find all active periods
-    const activePeriods = await AppraisalPeriod.find({ status: 'active' }).select('_id name');
+    // Find all active periods (excludes elapsed: endDate >= today)
+    const activePeriods = await AppraisalPeriod.find(getNonElapsedActivePeriodFilter()).select('_id name');
     const activePeriodIds = activePeriods.map(p => p._id);
     
     if (activePeriodIds.length === 0) {
