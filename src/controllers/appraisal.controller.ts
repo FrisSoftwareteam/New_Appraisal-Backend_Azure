@@ -7,6 +7,13 @@ import User from '../models/User';
 import PeriodStaffAssignment from '../models/PeriodStaffAssignment';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createAuditLog } from './audit.controller';
+import {
+  notifyAppraisalInitiated,
+  notifyAppraisalPendingAcceptance,
+  notifyAppraisalStepAssigned,
+  notifyAppraisalRejected,
+  notifyAppraisalCompleted,
+} from '../services/email.service';
 
 // Initiate an appraisal for an employee
 export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
@@ -104,6 +111,12 @@ export const initiateAppraisal = async (req: AuthRequest, res: Response) => {
       undefined,
       { templateId, workflowId, period }
     );
+
+    const emp = employee as any;
+    const firstStepName = appraisalFlow.steps?.[0]?.name || 'Self Assessment';
+    if (emp.email) {
+      notifyAppraisalInitiated(emp.email, `${emp.firstName} ${emp.lastName}`, period, firstStepName).catch(() => {});
+    }
     
     res.status(201).json(appraisal);
   } catch (error) {
@@ -245,6 +258,28 @@ export const submitReview = async (req: AuthRequest, res: Response) => {
       { stepId, overallScore }
     );
 
+    // Email notifications (fire-and-forget)
+    const reviewerName = `${req.user?.firstName} ${req.user?.lastName}`;
+    if (!isReviewerEmployee) {
+      const emp = await User.findById(appraisal.employee).select('email firstName lastName').lean();
+      if (emp?.email) {
+        notifyAppraisalPendingAcceptance(emp.email, `${emp.firstName} ${emp.lastName}`, reviewerName, currentStepConfig.name).catch(() => {});
+      }
+    } else if (nextStep) {
+      const nextStepId = nextStep._id || nextStep.id;
+      const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+      if (nextAssignment?.assignedUser) {
+        const assignee = await User.findById(nextAssignment.assignedUser).select('email firstName lastName').lean();
+        const emp = await User.findById(appraisal.employee).select('firstName lastName').lean();
+        if (assignee?.email && emp) {
+          notifyAppraisalStepAssigned(
+            assignee.email, `${assignee.firstName} ${assignee.lastName}`,
+            `${emp.firstName} ${emp.lastName}`, nextStep.name, appraisal.period,
+          ).catch(() => {});
+        }
+      }
+    }
+
     res.json(appraisal);
   } catch (error) {
     console.error('Error submitting review:', error);
@@ -325,6 +360,25 @@ export const rejectAppraisal = async (req: AuthRequest, res: Response) => {
     );
 
     await appraisal.save();
+
+    // Email notification — notify the person who needs to revise
+    const rejectorRole = req.user?.role?.replace(/_/g, ' ') || 'Reviewer';
+    const emp = await User.findById(appraisal.employee).select('email firstName lastName').lean();
+    const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+
+    if (appraisal.status === 'in_progress') {
+      const workflow: any = appraisal.workflow;
+      const stepConfig = workflow.steps[appraisal.currentStep];
+      const stepId = stepConfig?._id || stepConfig?.id;
+      const assignment = appraisal.stepAssignments.find(sa => sa.stepId === stepId?.toString());
+      if (assignment?.assignedUser) {
+        const assignee = await User.findById(assignment.assignedUser).select('email firstName lastName').lean();
+        if (assignee?.email) {
+          notifyAppraisalRejected(assignee.email, `${assignee.firstName} ${assignee.lastName}`, empName, rejectorRole, reason).catch(() => {});
+        }
+      }
+    }
+
     res.json(appraisal);
   } catch (error) {
     res.status(500).json({ message: 'Error rejecting appraisal', error });
@@ -425,6 +479,31 @@ export const acceptAppraisal = async (req: AuthRequest, res: Response) => {
     }
 
     await appraisal.save();
+
+    // Email notifications (fire-and-forget)
+    const emp = await User.findById(appraisal.employee).select('email firstName lastName').lean();
+    const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+
+    if (appraisal.status === 'completed' && emp?.email) {
+      notifyAppraisalCompleted(emp.email, empName, appraisal.period).catch(() => {});
+    } else if (appraisal.status === 'in_progress') {
+      const workflow: any = appraisal.workflow;
+      const nextStepConfig = workflow.steps[appraisal.currentStep];
+      if (nextStepConfig) {
+        const nextStepId = nextStepConfig._id || nextStepConfig.id;
+        const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+        if (nextAssignment?.assignedUser) {
+          const assignee = await User.findById(nextAssignment.assignedUser).select('email firstName lastName').lean();
+          if (assignee?.email) {
+            notifyAppraisalStepAssigned(
+              assignee.email, `${assignee.firstName} ${assignee.lastName}`,
+              empName, nextStepConfig.name, appraisal.period,
+            ).catch(() => {});
+          }
+        }
+      }
+    }
+
     res.json(appraisal);
   } catch (error) {
     res.status(500).json({ message: 'Error accepting appraisal', error });

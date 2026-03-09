@@ -27,6 +27,7 @@ import reportRoutes from './routes/report.routes';
 import appraisalAdminEditRoutes from './routes/appraisal-admin-edit.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import trainingRoutes from './routes/training.routes';
+import leaveRequestRoutes from './routes/leaveRequest.routes';
 import { errorHandler, checkDatabaseConnection } from './middleware/error.middleware';
 import { configureCloudinary } from './config/cloudinary';
 
@@ -67,6 +68,7 @@ app.use('/api', periodStaffAssignmentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/training', trainingRoutes);
+app.use('/api/leave-requests', leaveRequestRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });
