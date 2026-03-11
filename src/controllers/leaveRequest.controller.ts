@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import LeaveRequest, { ILeaveRequest, LeaveType } from '../models/LeaveRequest';
+import LeaveRequest, { ILeaveRequest, LeaveType, LEAVE_TYPES } from '../models/LeaveRequest';
 import AttendanceException from '../models/AttendanceException';
 import User from '../models/User';
 import {
@@ -12,9 +12,16 @@ import {
 
 const HR_ROLES = ['hr_admin', 'super_admin'];
 
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  annual_leave: 'Annual Leave',
+  sick_leave: 'Sick Leave',
+  official_assignment: 'Official Assignment',
+  other: 'Other Leave',
+};
+
 interface ApprovalChainInput {
   reliefOfficerId?: string;
-  deptHeadId: string;
+  deptHeadId?: string;
   divisionHeadId?: string;
   groupHeadId?: string;
 }
@@ -30,32 +37,39 @@ async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput
   const users = await User.find({ _id: { $in: userIds } }).select('_id firstName lastName').lean();
   const userMap = new Map(users.map(u => [u._id.toString(), `${u.firstName} ${u.lastName}`]));
 
+  const missingIds = userIds.filter(id => !userMap.has(id));
+  if (missingIds.length > 0) {
+    throw Object.assign(new Error(`One or more selected approvers could not be found`), { statusCode: 400 });
+  }
+
   const getName = (id: string | undefined) => {
     if (!id) return '';
     return userMap.get(id) || 'Unknown';
   };
 
+  const step = (label: string, id: string | null) => ({
+    label, approverId: id, approverName: id ? getName(id) : 'HR Admin', status: 'pending' as const,
+  });
+
+  const hrStep = step('HR Admin', null);
+
   if (leaveType === 'annual_leave') {
-    if (!data.reliefOfficerId || !data.deptHeadId || !data.divisionHeadId || !data.groupHeadId) {
-      throw new Error('Annual leave requires Relief Officer, Department Head, Division Head, and Group Head');
+    if (!data.reliefOfficerId) {
+      throw new Error('Annual leave requires at least a Relief Officer');
     }
-    return [
-      { label: 'Relief Officer', approverId: data.reliefOfficerId, approverName: getName(data.reliefOfficerId), status: 'pending' as const },
-      { label: 'Head of Department', approverId: data.deptHeadId, approverName: getName(data.deptHeadId), status: 'pending' as const },
-      { label: 'Head of Division', approverId: data.divisionHeadId, approverName: getName(data.divisionHeadId), status: 'pending' as const },
-      { label: 'Group Head', approverId: data.groupHeadId, approverName: getName(data.groupHeadId), status: 'pending' as const },
-      { label: 'HR Admin', approverId: null, approverName: 'HR Admin', status: 'pending' as const },
-    ];
+    const steps = [step('Relief Officer', data.reliefOfficerId)];
+    if (data.deptHeadId)     steps.push(step('Head of Department', data.deptHeadId));
+    if (data.divisionHeadId) steps.push(step('Head of Division', data.divisionHeadId));
+    if (data.groupHeadId)    steps.push(step('Group Head', data.groupHeadId));
+    steps.push(hrStep);
+    return steps;
   }
 
-  if (leaveType === 'sick_leave') {
+  if (leaveType === 'sick_leave' || leaveType === 'official_assignment' || leaveType === 'other') {
     if (!data.deptHeadId) {
-      throw new Error('Sick leave requires Department Head');
+      throw new Error('This leave type requires Department Head');
     }
-    return [
-      { label: 'Head of Department', approverId: data.deptHeadId, approverName: getName(data.deptHeadId), status: 'pending' as const },
-      { label: 'HR Admin', approverId: null, approverName: 'HR Admin', status: 'pending' as const },
-    ];
+    return [step('Head of Department', data.deptHeadId), hrStep];
   }
 
   throw new Error('Invalid leave type');
@@ -77,6 +91,10 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
 
     if (!leaveType || !startDateKey || !endDateKey || !reason) {
       return res.status(400).json({ message: 'Leave type, dates, and reason are required' });
+    }
+
+    if (!LEAVE_TYPES.includes(leaveType)) {
+      return res.status(400).json({ message: `Invalid leave type. Must be one of: ${LEAVE_TYPES.join(', ')}` });
     }
 
     if (startDateKey > endDateKey) {
@@ -133,7 +151,8 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
     res.status(201).json(leaveRequest);
   } catch (error: any) {
     console.error('Error creating leave request:', error);
-    res.status(500).json({ message: error.message || 'Error creating leave request' });
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || 'Error creating leave request' });
   }
 };
 
@@ -253,7 +272,7 @@ export const actOnLeaveRequest = async (req: AuthRequest, res: Response) => {
       request.status = 'approved';
 
       const exception = await AttendanceException.create({
-        title: `${request.leaveType === 'annual_leave' ? 'Annual' : 'Sick'} Leave - ${request.applicantName}`,
+        title: `${LEAVE_TYPE_LABELS[request.leaveType]} - ${request.applicantName}`,
         type: request.leaveType,
         scope: 'individual',
         status: 'approved',

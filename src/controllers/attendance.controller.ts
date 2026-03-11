@@ -11,6 +11,7 @@ import AttendanceException, {
   type AttendanceExceptionType
 } from '../models/AttendanceException';
 import { AuthRequest } from '../middleware/auth.middleware';
+import LeaveRequest from '../models/LeaveRequest';
 import {
   getExceptionMapForUsersOnDate,
   serializeAttendanceException
@@ -1275,6 +1276,64 @@ export const reviewAttendanceExceptionRequestForAdmin = async (req: AuthRequest,
   } catch (error) {
     console.error('Error reviewing attendance exception request:', error);
     return res.status(500).json({ message: 'Error reviewing attendance exception request', error });
+  }
+};
+
+export const clearTrialDataForAdmin = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!ensureAttendanceAdmin(req, res)) {
+      return;
+    }
+
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate.trim() : '';
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate.trim() : '';
+    const confirm = typeof req.query.confirm === 'string' ? req.query.confirm.trim() : '';
+
+    if (!isValidDateKey(startDate) || !isValidDateKey(endDate)) {
+      return res.status(400).json({ message: 'startDate and endDate are required in YYYY-MM-DD format.' });
+    }
+
+    if (startDate > endDate) {
+      return res.status(400).json({ message: 'startDate must be on or before endDate.' });
+    }
+
+    if (confirm !== 'CLEAR_TRIAL_DATA') {
+      return res.status(400).json({ message: 'Missing or invalid confirm parameter. Pass confirm=CLEAR_TRIAL_DATA.' });
+    }
+
+    const overlapQuery = { startDateKey: { $lte: endDate }, endDateKey: { $gte: startDate } };
+
+    // Collect exceptionIds from leave requests so we also remove their linked exceptions
+    const leaveRequests = await LeaveRequest.find(overlapQuery).select('exceptionId').lean();
+    const linkedExceptionIds = leaveRequests
+      .map((lr) => lr.exceptionId)
+      .filter(Boolean);
+
+    const [attendanceResult, leaveResult, exceptionResult] = await Promise.all([
+      AttendanceRecord.deleteMany({ dateKey: { $gte: startDate, $lte: endDate } }),
+      LeaveRequest.deleteMany(overlapQuery),
+      AttendanceException.deleteMany({
+        $or: [
+          overlapQuery,
+          ...(linkedExceptionIds.length > 0 ? [{ _id: { $in: linkedExceptionIds } }] : []),
+        ],
+      }),
+    ]);
+
+    console.log(
+      `[ClearTrialData] ${startDate}–${endDate} by ${req.user!.firstName} ${req.user!.lastName}: ` +
+      `attendance=${attendanceResult.deletedCount}, leave=${leaveResult.deletedCount}, exceptions=${exceptionResult.deletedCount}`
+    );
+
+    return res.json({
+      message: 'Trial data cleared successfully',
+      deletedAttendanceRecords: attendanceResult.deletedCount,
+      deletedLeaveRequests: leaveResult.deletedCount,
+      deletedExceptions: exceptionResult.deletedCount,
+    });
+  } catch (error) {
+    console.error('Error clearing trial data:', error);
+    return res.status(500).json({ message: 'Error clearing trial data', error });
   }
 };
 
