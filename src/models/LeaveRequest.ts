@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export const LEAVE_TYPES = ['annual_leave', 'sick_leave'] as const;
+export const LEAVE_TYPES = ['annual_leave', 'sick_leave', 'official_assignment', 'other'] as const;
 export const LEAVE_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'] as const;
 export const APPROVAL_STEP_STATUSES = ['pending', 'approved', 'rejected'] as const;
 

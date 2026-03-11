@@ -23,7 +23,8 @@ import {
   uploadAttendancePhoto,
   updateAttendanceExceptionForAdmin,
   updateAttendanceCaptureControlForAdmin,
-  updateAttendanceSettingsForAdmin
+  updateAttendanceSettingsForAdmin,
+  clearTrialDataForAdmin
 } from '../controllers/attendance.controller';
 
 const router = express.Router();
@@ -52,5 +53,6 @@ router.put('/admin/exceptions/:id', authenticate, updateAttendanceExceptionForAd
 router.delete('/admin/exceptions/:id', authenticate, deleteAttendanceExceptionForAdmin);
 router.get('/admin/exception-requests', authenticate, getAttendanceExceptionRequestsForAdmin);
 router.put('/admin/exception-requests/:id/review', authenticate, reviewAttendanceExceptionRequestForAdmin);
+router.delete('/admin/trial-data', authenticate, clearTrialDataForAdmin);
 
 export default router;

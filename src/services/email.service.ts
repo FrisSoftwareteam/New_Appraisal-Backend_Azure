@@ -106,6 +106,13 @@ async function send({ to, subject, title, body }: SendOptions): Promise<void> {
 
 // ─── Leave Request Notifications ─────────────────────────────────────
 
+const LEAVE_TYPE_EMAIL_LABELS: Record<string, string> = {
+  annual_leave: 'Annual Leave',
+  sick_leave: 'Sick Leave',
+  official_assignment: 'Official Assignment',
+  other: 'Other Leave',
+};
+
 export async function notifyLeaveSubmitted(
   applicantEmail: string,
   applicantName: string,
@@ -114,7 +121,7 @@ export async function notifyLeaveSubmitted(
   endDate: string,
   firstApproverName: string,
 ) {
-  const typeLabel = leaveType === 'annual_leave' ? 'Annual Leave' : 'Sick Leave';
+  const typeLabel = LEAVE_TYPE_EMAIL_LABELS[leaveType] || leaveType;
   await send({
     to: applicantEmail,
     subject: `Leave Request Submitted — ${typeLabel}`,
@@ -139,7 +146,7 @@ export async function notifyLeaveApprovalNeeded(
   stepLabel: string,
   reason: string,
 ) {
-  const typeLabel = leaveType === 'annual_leave' ? 'Annual Leave' : 'Sick Leave';
+  const typeLabel = LEAVE_TYPE_EMAIL_LABELS[leaveType] || leaveType;
   await send({
     to: approverEmail,
     subject: `Leave Approval Needed — ${applicantName}`,
