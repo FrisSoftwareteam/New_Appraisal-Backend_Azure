@@ -1,11 +1,11 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type QuestionType = "rating" | "text" | "multiple_choice";
+export type QuestionType = "rating" | "text" | "multiple_choice" | "attendance" | "punctuality";
 
 export interface IAppraisalQuestion {
   id: string;
   text: string;
-  type: 'rating' | 'text' | 'multiple_choice';
+  type: 'rating' | 'text' | 'multiple_choice' | 'attendance' | 'punctuality';
   category: string;
   subsection?: string;
   weight: number;
@@ -34,7 +34,7 @@ const AppraisalQuestionSchema: Schema = new Schema({
   text: { type: String, required: true },
   type: {
     type: String,
-    enum: ["rating", "text", "multiple_choice"],
+    enum: ["rating", "text", "multiple_choice", "attendance", "punctuality"],
     required: true
   },
   category: { type: String, required: true },
