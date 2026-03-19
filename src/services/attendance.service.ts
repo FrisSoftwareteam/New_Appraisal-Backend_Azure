@@ -177,9 +177,20 @@ export async function getAttendanceCaptureStateForDate(
 
   const captureEnabled = await getAttendanceCaptureEnabled();
   const isWeekend = WEEKENDS_AUTO_PAUSED && isWeekendDateKey(dateKey);
-  const pauseException =
-    EXCEPTIONS_AFFECT_CAPTURE && !isWeekend && userId
+  const exceptionNullable =
+    !isWeekend && userId
       ? await getExceptionForUserOnDate(userId, dateKey)
+      : null;
+
+  const isCompanyHoliday =
+    exceptionNullable &&
+    (exceptionNullable.scope === 'company' ||
+      exceptionNullable.type === 'public_holiday' ||
+      exceptionNullable.type === 'non_working_day');
+
+  const pauseException =
+    EXCEPTIONS_AFFECT_CAPTURE || isCompanyHoliday
+      ? exceptionNullable
       : null;
   const captureAllowed = captureEnabled && !isWeekend && !pauseException;
   const pauseReason: AttendanceCapturePauseReason = !captureEnabled

@@ -908,11 +908,6 @@ export const createAttendanceExceptionForAdmin = async (req: AuthRequest, res: R
         .status(400)
         .json({ message: `type must be one of: ${ATTENDANCE_EXCEPTION_TYPES.join(', ')}.` });
     }
-    if (!STAFF_REQUEST_ALLOWED_TYPES.includes(type)) {
-      return res.status(400).json({
-        message: `Staff requests only support: ${STAFF_REQUEST_ALLOWED_TYPES.join(', ')}.`
-      });
-    }
 
     if (!scope) {
       return res
