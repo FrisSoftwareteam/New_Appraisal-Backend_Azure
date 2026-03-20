@@ -26,7 +26,9 @@ import {
   serializeAttendanceRecord,
   setAttendanceCaptureEnabled,
   type AttendanceCapturePauseReason,
-  setAttendanceCutoffTime
+  setAttendanceCutoffTime,
+  isWeekendDateKey,
+  WEEKENDS_AUTO_PAUSED
 } from '../services/attendance.service';
 import {
   isValidDateKey,
@@ -45,7 +47,7 @@ interface DailyAttendanceRow {
   userName: string;
   department?: string;
   dateKey: string;
-  attendanceStatus: 'present' | 'absent' | 'excused';
+  attendanceStatus: 'present' | 'absent' | 'excused' | 'weekend';
   checkInStatus?: 'on-time' | 'late';
   checkInAt?: string;
   checkOutAt?: string;
@@ -183,7 +185,7 @@ export const checkOut = async (req: AuthRequest, res: Response) => {
       typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
     const photoPublicId =
       typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
-    const checkOutLocationLabel =
+    const checkOutLocationLabelInput =
       typeof req.body?.locationLabel === 'string' ? req.body.locationLabel.trim() : undefined;
     const checkOutLatitude =
       typeof req.body?.latitude === 'number' ? req.body.latitude : undefined;
@@ -196,10 +198,16 @@ export const checkOut = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Photo evidence is required for check-out.' });
     }
 
+    let resolvedCheckOutLocationLabel = checkOutLocationLabelInput;
+    if (checkOutLatitude !== undefined && checkOutLongitude !== undefined) {
+      const fallbackLabel = formatGpsLabel(checkOutLatitude, checkOutLongitude, checkOutAccuracy);
+      resolvedCheckOutLocationLabel = (await reverseGeocode(checkOutLatitude, checkOutLongitude)) ?? fallbackLabel;
+    }
+
     record.checkOutAt = new Date();
     record.checkOutPhotoUrl = photoUrl;
     record.checkOutPhotoPublicId = photoPublicId || undefined;
-    if (checkOutLocationLabel) record.checkOutLocationLabel = checkOutLocationLabel;
+    if (resolvedCheckOutLocationLabel) record.checkOutLocationLabel = resolvedCheckOutLocationLabel;
     if (checkOutLatitude !== undefined) record.checkOutLatitude = checkOutLatitude;
     if (checkOutLongitude !== undefined) record.checkOutLongitude = checkOutLongitude;
     if (checkOutAccuracy !== undefined) record.checkOutAccuracy = checkOutAccuracy;
@@ -383,7 +391,7 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
     const [records, staffUsers, cutoffTime] = await Promise.all([
       AttendanceRecord.find({ dateKey: requestedDate })
         .select(
-          '_id userId userName department dateKey checkInAt checkOutAt checkInStatus locationLabel accuracy photoUrl photoPublicId checkOutPhotoUrl checkOutPhotoPublicId flagStatus flagReason flaggedAt flaggedById flaggedByName flagResolutionNote resolvedAt resolvedById resolvedByName'
+          '_id userId userName department dateKey checkInAt checkOutAt checkInStatus locationLabel accuracy photoUrl photoPublicId checkOutPhotoUrl checkOutPhotoPublicId checkOutLocationLabel checkOutLatitude checkOutLongitude checkOutAccuracy flagStatus flagReason flaggedAt flaggedById flaggedByName flagResolutionNote resolvedAt resolvedById resolvedByName'
         )
         .sort({ checkInAt: 1 }),
       User.find({ role: { $ne: 'guest' } })
@@ -429,13 +437,15 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
           };
         }
 
+        const isWeekendPause = WEEKENDS_AUTO_PAUSED && isWeekendDateKey(requestedDate);
+
         return {
           id: `absent-${userId}`,
           userId,
           userName: employeeName,
           department: staffUser.department ?? undefined,
           dateKey: requestedDate,
-          attendanceStatus: 'absent',
+          attendanceStatus: isWeekendPause ? 'weekend' : 'absent',
           checkedOut: false,
           workDurationHours: null,
           locationLabel: '--',
@@ -509,6 +519,8 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
           return row.checkInStatus === 'late';
         case 'checked-out':
           return row.attendanceStatus === 'present' && row.checkedOut;
+        case 'weekend':
+          return row.attendanceStatus === 'weekend';
         default:
           return true;
       }
@@ -531,6 +543,8 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
           acc.excused += 1;
         } else if (row.attendanceStatus === 'absent') {
           acc.absent += 1;
+        } else if (row.attendanceStatus === 'weekend') {
+          acc.weekend += 1;
         }
         return acc;
       },
@@ -541,7 +555,8 @@ export const getDailyAttendanceForAdmin = async (req: AuthRequest, res: Response
         excused: 0,
         onTime: 0,
         late: 0,
-        checkedOut: 0
+        checkedOut: 0,
+        weekend: 0
       }
     );
 
@@ -1348,7 +1363,7 @@ function ensureAttendanceAdmin(req: AuthRequest, res: Response) {
 
 function getCaptureDisabledMessage(reason: AttendanceCapturePauseReason, exceptionTitle?: string) {
   if (reason === 'weekend') {
-    return 'Attendance capture is paused on weekends for development.';
+    return 'Attendance capture is paused on weekends.';
   }
 
   if (reason === 'exception_day') {
