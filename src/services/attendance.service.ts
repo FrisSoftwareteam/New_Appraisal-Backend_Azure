@@ -31,7 +31,7 @@ const ATTENDANCE_TIMEZONE =
     : 'Africa/Lagos';
 const CAPTURE_ENABLED_SETTING_KEY = 'attendance_capture_enabled';
 const DEFAULT_CAPTURE_ENABLED = false;
-const WEEKENDS_AUTO_PAUSED = parseBooleanEnv(process.env.ATTENDANCE_WEEKENDS_AUTO_PAUSED, true);
+export const WEEKENDS_AUTO_PAUSED = parseBooleanEnv(process.env.ATTENDANCE_WEEKENDS_AUTO_PAUSED, true);
 // Deprecated: force-pause is disabled so HR Admin/Super Admin can always start/stop capture.
 const CAPTURE_FORCE_PAUSED = false;
 // Optional: when false, approved exceptions do not pause attendance capture.
@@ -326,7 +326,7 @@ function parseBooleanEnv(value: string | undefined, fallback: boolean) {
   return fallback;
 }
 
-function isWeekendDateKey(dateKey: string) {
+export function isWeekendDateKey(dateKey: string) {
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) {
     return false;
