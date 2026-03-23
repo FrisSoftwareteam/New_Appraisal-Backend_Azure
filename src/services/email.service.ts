@@ -38,6 +38,7 @@ function wrap(title: string, body: string): string {
         </tr>
         <tr>
           <td style="padding:16px 24px;border-top:1px solid #e4e4e7;color:#71717a;font-size:12px;">
+            <p style="margin:0 0 8px;">Access the application here: <a href="https://fris-appraisal-app.vercel.app/" style="color:#2563eb;text-decoration:none;font-weight:500;">https://fris-appraisal-app.vercel.app/</a></p>
             This is an automated notification. Please do not reply to this email.
           </td>
         </tr>
@@ -90,7 +91,8 @@ async function send({ to, subject, title, body }: SendOptions): Promise<void> {
   const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
   if (recipients.length === 0) return;
 
-  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@app.com';
+  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@app.com';
+  const from = `"FRIS HR SYSTEM" <${fromEmail}>`;
 
   try {
     await getTransporter().sendMail({
