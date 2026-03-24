@@ -84,23 +84,25 @@ interface SendOptions {
 
 async function send({ to, subject, title, body }: SendOptions): Promise<void> {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[Email] Skipped — EMAIL_USER/EMAIL_PASS not configured');
+    console.warn('[Email] Skipped — EMAIL_USER/EMAIL_PASS not configured. EMAIL_USER:', process.env.EMAIL_USER);
     return;
   }
 
   const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
   if (recipients.length === 0) return;
 
-  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@app.com';
+  const fromEmail = process.env.EMAIL_USER || 'noreply@app.com';
   const from = `"FRIS HR SYSTEM" <${fromEmail}>`;
 
   try {
-    await getTransporter().sendMail({
+    console.log(`[Email] Sending to: ${recipients.join(', ')} | Subject: ${subject}`);
+    const info = await getTransporter().sendMail({
       from,
       to: recipients.join(', '),
       subject,
       html: wrap(title, body),
     });
+    console.log('[Email] Sent successfully:', info.messageId);
   } catch (err) {
     console.error('[Email] Failed to send:', err);
   }
