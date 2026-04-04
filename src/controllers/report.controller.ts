@@ -4,6 +4,8 @@ import Appraisal from '../models/Appraisal';
 import User from '../models/User';
 import mongoose from 'mongoose';
 import AppraisalPeriod from '../models/AppraisalPeriod';
+import AttendanceRecord from '../models/AttendanceRecord';
+import { summarizeAttendance } from '../utils/attendance-metrics';
 
 // Return available periods derived from appraisals (fallback when /periods is empty)
 export const getReportPeriods = async (req: Request, res: Response) => {
@@ -273,5 +275,103 @@ export const exportReport = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ message: 'Error generating report' });
+  }
+};
+
+// Export Attendance & Punctuality Report
+export const getAttendanceReport = async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate, userId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Start date and end date are required (YYYY-MM-DD)' });
+    }
+
+    const query: any = {
+      dateKey: { $gte: String(startDate), $lte: String(endDate) }
+    };
+
+    if (userId && userId !== 'all') {
+      query.userId = userId;
+    }
+
+    // Fetch records populated with user details
+    const records = await AttendanceRecord.find(query)
+      .populate('userId', 'firstName lastName department email role')
+      .sort({ dateKey: 1, checkInAt: 1 })
+      .lean();
+
+    // Helper: Safe Time Format
+    const formatTime = (date?: Date) => {
+      if (!date) return '';
+      const d = new Date(date);
+      return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Prepare Detailed Log Data
+    const detailedLog = records.map((rec: any) => ({
+      "Date": rec.dateKey,
+      "Employee Name": `${rec.userId?.firstName || ''} ${rec.userId?.lastName || ''}`.trim() || rec.userName,
+      "Department": rec.userId?.department || rec.department || '',
+      "Clock In": formatTime(rec.checkInAt),
+      "Clock Out": formatTime(rec.checkOutAt),
+      "Status": rec.checkInStatus === 'on-time' ? 'On-time' : 'Late',
+      "Location": rec.locationLabel || '',
+      "Flags": rec.flagStatus !== 'clear' ? `${rec.flagStatus}: ${rec.flagReason || ''}` : ''
+    }));
+
+    // Prepare Staff Summary Data
+    // Group records by userId to calculate summary stats
+    const staffMap = new Map();
+    records.forEach((rec: any) => {
+      const uId = rec.userId?._id?.toString() || 'unknown';
+      if (!staffMap.has(uId)) {
+        staffMap.set(uId, {
+          user: rec.userId,
+          records: []
+        });
+      }
+      staffMap.get(uId).records.push(rec);
+    });
+
+    const staffSummary = Array.from(staffMap.values()).map(({ user, records }) => {
+      const stats = summarizeAttendance(records);
+      return {
+        "Employee Name": `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Unknown',
+        "Department": user?.department || '',
+        "Total Days": stats.attendanceDays,
+        "On-time Days": stats.onTimeDays,
+        "Late Days": stats.lateDays,
+        "Punctuality %": `${stats.punctualityRate}%`,
+        "Avg Clock-in": stats.averageCheckInTime || 'N/A',
+        "Avg Clock-out": stats.averageCheckOutTime || 'N/A',
+        "Avg Work Hours": stats.averageWorkHours || 'N/A'
+      };
+    });
+
+    // Generate Excel
+    const wb = xlsx.utils.book_new();
+    
+    // Summary Sheet
+    const wsSummary = xlsx.utils.json_to_sheet(staffSummary);
+    xlsx.utils.book_append_sheet(wb, wsSummary, "Staff Summary");
+
+    // Detailed Log Sheet
+    const wsDetailed = xlsx.utils.json_to_sheet(detailedLog);
+    xlsx.utils.book_append_sheet(wb, wsDetailed, "Detailed Attendance Log");
+
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = userId && userId !== 'all' && staffSummary.length > 0
+      ? `Attendance_Report_${staffSummary[0]["Employee Name"].replace(/\s+/g, '_')}_${startDate}_to_${endDate}.xlsx`
+      : `Attendance_Report_All_Staff_${startDate}_to_${endDate}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Attendance Export error:', error);
+    res.status(500).json({ message: 'Error generating attendance report' });
   }
 };

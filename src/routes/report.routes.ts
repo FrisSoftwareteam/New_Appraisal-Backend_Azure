@@ -1,5 +1,5 @@
 import express from 'express';
-import { getReportStats, getReportPeriods, exportReport as getReportExport } from '../controllers/report.controller';
+import { getReportStats, getReportPeriods, exportReport as getReportExport, getAttendanceReport } from '../controllers/report.controller';
 import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
@@ -11,5 +11,7 @@ router.get('/stats', authenticate, requirePermission('viewReports'), getReportSt
 router.get('/periods', authenticate, requirePermission('viewReports'), getReportPeriods);
 // Export detailed report
 router.get('/export', authenticate, requirePermission('viewReports'), getReportExport);
+// Export attendance and punctuality report
+router.get('/attendance', authenticate, requirePermission('viewReports'), getAttendanceReport);
 
 export default router;
