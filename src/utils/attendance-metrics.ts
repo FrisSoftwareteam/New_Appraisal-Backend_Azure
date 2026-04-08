@@ -171,7 +171,7 @@ export function countWeekdaysInRange(startDate: Date, endDate: Date) {
 
 export function summarizeAttendance(
   records: AttendanceMetricRecord[],
-  options?: { expectedWorkDays?: number; excusedDays?: number }
+  options?: { expectedWorkDays?: number; excusedDays?: number; timeZone?: string }
 ): AttendanceSummary {
   const dedupedRecords = dedupeByDate(records);
   const attendanceDays = dedupedRecords.length;
@@ -187,10 +187,10 @@ export function summarizeAttendance(
   const attendanceRate = expectedWorkDays > 0 ? roundTo((attendanceDays / expectedWorkDays) * 100, 1) : 0;
 
   const checkInMinutes = dedupedRecords
-    .map((record) => toMinutes(record.checkInAt))
+    .map((record) => toMinutes(record.checkInAt, options?.timeZone))
     .filter((value): value is number => value !== null);
   const checkOutMinutes = dedupedRecords
-    .map((record) => toMinutes(record.checkOutAt))
+    .map((record) => toMinutes(record.checkOutAt, options?.timeZone))
     .filter((value): value is number => value !== null);
   const workDurations = dedupedRecords
     .map((record) => getWorkDurationMinutes(record.checkInAt, record.checkOutAt))
@@ -220,7 +220,7 @@ export function buildMonthlyAttendanceBreakdown(
   records: AttendanceMetricRecord[],
   startDate: Date,
   endDate: Date,
-  options?: { excusedDateKeys?: Set<string> }
+  options?: { excusedDateKeys?: Set<string>; timeZone?: string }
 ): MonthlyAttendanceSummary[] {
   if (startDate > endDate) {
     return [];
@@ -234,7 +234,7 @@ export function buildMonthlyAttendanceBreakdown(
     if (!bounds) {
       return {
         month,
-        ...summarizeAttendance([], { expectedWorkDays: 0, excusedDays: 0 })
+        ...summarizeAttendance([], { expectedWorkDays: 0, excusedDays: 0, timeZone: options?.timeZone })
       };
     }
 
@@ -253,7 +253,7 @@ export function buildMonthlyAttendanceBreakdown(
 
     return {
       month,
-      ...summarizeAttendance(monthRecords, { expectedWorkDays, excusedDays })
+      ...summarizeAttendance(monthRecords, { expectedWorkDays, excusedDays, timeZone: options?.timeZone })
     };
   });
 }
@@ -325,13 +325,14 @@ function isValidDate(value: Date | string | null | undefined) {
   return safeDate(value) !== null;
 }
 
-function toMinutes(value: Date | string | null | undefined) {
+function toMinutes(value: Date | string | null | undefined, timeZone?: string) {
   const date = safeDate(value);
   if (!date) {
     return null;
   }
 
-  return date.getUTCHours() * 60 + date.getUTCMinutes();
+  const { hour, minute } = getLocalTimeParts(date, timeZone);
+  return hour * 60 + minute;
 }
 
 function getWorkDurationMinutes(
