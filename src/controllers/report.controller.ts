@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import AppraisalPeriod from '../models/AppraisalPeriod';
 import AttendanceRecord from '../models/AttendanceRecord';
 import { summarizeAttendance } from '../utils/attendance-metrics';
+import { getAttendanceTimezone } from '../services/attendance.service';
 
 // Return available periods derived from appraisals (fallback when /periods is empty)
 export const getReportPeriods = async (req: Request, res: Response) => {
@@ -302,10 +303,18 @@ export const getAttendanceReport = async (req: Request, res: Response) => {
       .lean();
 
     // Helper: Safe Time Format
+    const timezone = getAttendanceTimezone();
     const formatTime = (date?: Date) => {
       if (!date) return '';
       const d = new Date(date);
-      return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return isNaN(d.getTime())
+        ? ''
+        : d.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: timezone
+          });
     };
 
     // Prepare Detailed Log Data
@@ -335,7 +344,7 @@ export const getAttendanceReport = async (req: Request, res: Response) => {
     });
 
     const staffSummary = Array.from(staffMap.values()).map(({ user, records }) => {
-      const stats = summarizeAttendance(records);
+      const stats = summarizeAttendance(records, { timeZone: timezone });
       return {
         "Employee Name": `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Unknown',
         "Department": user?.department || '',

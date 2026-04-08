@@ -251,9 +251,10 @@ export async function getAttendanceInsightsForRange(
   return {
     startDate,
     endDate,
-    summary: summarizeAttendance(metricRecords, { expectedWorkDays, excusedDays }),
+    summary: summarizeAttendance(metricRecords, { expectedWorkDays, excusedDays, timeZone: ATTENDANCE_TIMEZONE }),
     monthlyBreakdown: buildMonthlyAttendanceBreakdown(metricRecords, start, end, {
-      excusedDateKeys
+      excusedDateKeys,
+      timeZone: ATTENDANCE_TIMEZONE
     }),
     records: metricRecords.map(serializeAttendanceRecord)
   };
