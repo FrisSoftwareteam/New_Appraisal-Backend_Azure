@@ -14,9 +14,11 @@ const HR_ROLES = ['hr_admin', 'super_admin'];
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   annual_leave: 'Annual Leave',
-  sick_leave: 'Sick Leave',
-  official_assignment: 'Official Assignment',
-  other: 'Other Leave',
+  casual_leave: 'Casual Leave',
+  compassionate_leave: 'Compassionate Leave',
+  maternity_leave: 'Maternity Leave',
+  exam_leave: 'Exam Leave',
+  leave_of_absence: 'Leave of Absence',
 };
 
 interface ApprovalChainInput {
@@ -26,7 +28,7 @@ interface ApprovalChainInput {
   groupHeadId?: string;
 }
 
-async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput) {
+ async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput) {
   const userIds = [
     data.reliefOfficerId,
     data.deptHeadId,
@@ -53,11 +55,17 @@ async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput
 
   const hrStep = step('HR Admin', null);
 
+  if (leaveType === 'leave_of_absence') {
+    return [hrStep];
+  }
+
+  if (!data.reliefOfficerId) {
+    throw new Error('Every leave application requires a Relief Officer');
+  }
+
+  const steps = [step('Relief Officer', data.reliefOfficerId)];
+
   if (leaveType === 'annual_leave') {
-    if (!data.reliefOfficerId) {
-      throw new Error('Annual leave requires at least a Relief Officer');
-    }
-    const steps = [step('Relief Officer', data.reliefOfficerId)];
     if (data.deptHeadId)     steps.push(step('Head of Department', data.deptHeadId));
     if (data.divisionHeadId) steps.push(step('Head of Division', data.divisionHeadId));
     if (data.groupHeadId)    steps.push(step('Group Head', data.groupHeadId));
@@ -65,14 +73,14 @@ async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput
     return steps;
   }
 
-  if (leaveType === 'sick_leave' || leaveType === 'official_assignment' || leaveType === 'other') {
-    if (!data.deptHeadId) {
-      throw new Error('This leave type requires Department Head');
-    }
-    return [step('Head of Department', data.deptHeadId), hrStep];
+  // All other leave types: Casual, Compassionate, Maternity, Exam
+  if (!data.deptHeadId) {
+    throw new Error('This leave type requires a Department Head');
   }
+  steps.push(step('Head of Department', data.deptHeadId));
+  steps.push(hrStep);
 
-  throw new Error('Invalid leave type');
+  return steps;
 }
 
 export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
@@ -83,14 +91,15 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
       startDateKey,
       endDateKey,
       reason,
+      leaveAllowance,
       reliefOfficerId,
       deptHeadId,
       divisionHeadId,
       groupHeadId,
     } = req.body;
 
-    if (!leaveType || !startDateKey || !endDateKey || !reason) {
-      return res.status(400).json({ message: 'Leave type, dates, and reason are required' });
+    if (!leaveType || !startDateKey || !endDateKey || !reason || !leaveAllowance) {
+      return res.status(400).json({ message: 'Leave type, dates, reason, and allowance are required' });
     }
 
     if (!LEAVE_TYPES.includes(leaveType)) {
@@ -128,6 +137,7 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
       startDateKey,
       endDateKey,
       reason,
+      leaveAllowance,
       approvalSteps,
       currentStep: 0,
       status: 'pending',

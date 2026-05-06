@@ -36,9 +36,19 @@ export const getAppraisalForUser = async (req: AuthRequest, res: Response) => {
     const isAdmin = ['hr_admin', 'appraisal_committee', 'super_admin'].includes(req.user?.role || '');
     const isEmployee = req.user?._id?.toString() === appraisal.employee._id.toString();
     
+    // Check if user is an assigned reviewer (either in stepAssignments or has submitted a review)
+    const isAssignedReviewer = appraisal.stepAssignments?.some(
+      (sa: any) => sa.assignedUser?.toString() === req.user?._id?.toString()
+    ) || appraisal.reviews?.some(
+      (r: any) => {
+        const rId = r.reviewerId?._id || r.reviewerId;
+        return rId?.toString() === req.user?._id?.toString();
+      }
+    );
+
     // Check if user has permission to view this appraisal
-    // Employees can view their own appraisals, admins can view any appraisal
-    if (!isEmployee && !isAdmin) {
+    // Employees can view their own appraisals, admins can view any appraisal, assigned reviewers can view appraisals they review
+    if (!isEmployee && !isAdmin && !isAssignedReviewer) {
       return res.status(403).json({ message: 'You do not have permission to view this appraisal' });
     }
 
@@ -49,15 +59,15 @@ export const getAppraisalForUser = async (req: AuthRequest, res: Response) => {
       (appraisalData as any).attendanceInsights = attendanceInsights;
     }
 
-    // If employee (and not also an admin), return original version (hide admin edits)
-    if (isEmployee && !isAdmin) {
-      const employeeView = {
+    // If employee or reviewer (and not also an admin), return original version (hide admin edits)
+    if ((isEmployee || isAssignedReviewer) && !isAdmin) {
+      const regularView = {
         ...appraisalData,
-        adminEditedVersion: undefined, // Hide admin edits from employees
+        adminEditedVersion: undefined, // Hide admin edits
         isAdminEdited: false
       };
-      console.log('Returning employee view (reviews hidden from admin edits)');
-      return res.json(employeeView);
+      console.log('Returning regular view (reviews hidden from admin edits)');
+      return res.json(regularView);
     }
 
     // If admin, return with admin version if it exists

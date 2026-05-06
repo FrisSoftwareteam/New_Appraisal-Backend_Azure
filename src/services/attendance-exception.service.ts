@@ -245,11 +245,12 @@ function getTypePriority(type: AttendanceExceptionType) {
     case 'public_holiday':
       return 1;
     case 'annual_leave':
+    case 'casual_leave':
+    case 'compassionate_leave':
+    case 'maternity_leave':
+    case 'exam_leave':
+    case 'leave_of_absence':
       return 2;
-    case 'sick_leave':
-      return 3;
-    case 'official_assignment':
-      return 4;
     default:
       return 5;
   }
