@@ -79,9 +79,11 @@ interface DailyAttendanceRow {
 
 const STAFF_REQUEST_ALLOWED_TYPES: AttendanceExceptionType[] = [
   'annual_leave',
-  'sick_leave',
-  'official_assignment',
-  'other'
+  'casual_leave',
+  'compassionate_leave',
+  'maternity_leave',
+  'exam_leave',
+  'leave_of_absence'
 ];
 
 export const checkIn = async (req: AuthRequest, res: Response) => {
@@ -1656,10 +1658,16 @@ function buildRequestTitle(type: AttendanceExceptionType) {
   switch (type) {
     case 'annual_leave':
       return 'Annual Leave Request';
-    case 'sick_leave':
-      return 'Sick Leave Request';
-    case 'official_assignment':
-      return 'Official Assignment Request';
+    case 'casual_leave':
+      return 'Casual Leave Request';
+    case 'compassionate_leave':
+      return 'Compassionate Leave Request';
+    case 'maternity_leave':
+      return 'Maternity Leave Request';
+    case 'exam_leave':
+      return 'Exam Leave Request';
+    case 'leave_of_absence':
+      return 'Leave of Absence Request';
     case 'public_holiday':
       return 'Public Holiday Request';
     case 'non_working_day':

@@ -112,9 +112,11 @@ async function send({ to, subject, title, body }: SendOptions): Promise<void> {
 
 const LEAVE_TYPE_EMAIL_LABELS: Record<string, string> = {
   annual_leave: 'Annual Leave',
-  sick_leave: 'Sick Leave',
-  official_assignment: 'Official Assignment',
-  other: 'Other Leave',
+  casual_leave: 'Casual Leave',
+  compassionate_leave: 'Compassionate Leave',
+  maternity_leave: 'Maternity Leave',
+  exam_leave: 'Exam Leave',
+  leave_of_absence: 'Leave of Absence',
 };
 
 export async function notifyLeaveSubmitted(

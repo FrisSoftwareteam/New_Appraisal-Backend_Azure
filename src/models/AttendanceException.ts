@@ -3,8 +3,11 @@ import mongoose, { Document, Schema } from 'mongoose';
 export const ATTENDANCE_EXCEPTION_SCOPES = ['company', 'individual'] as const;
 export const ATTENDANCE_EXCEPTION_TYPES = [
   'annual_leave',
-  'sick_leave',
-  'official_assignment',
+  'casual_leave',
+  'compassionate_leave',
+  'maternity_leave',
+  'exam_leave',
+  'leave_of_absence',
   'public_holiday',
   'non_working_day',
   'other'
