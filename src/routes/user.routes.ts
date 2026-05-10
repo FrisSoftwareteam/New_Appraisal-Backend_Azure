@@ -22,6 +22,9 @@ router.post(
   userController.bulkUpdateUsers
 );
 
+router.get("/on-prem-users", userController.getOnPremUsers);
+router.get("/on-prem-users/:id", userController.getOnPremUserById);
+
 router.get("/", authenticate, userController.getUsers); // Maybe restrict listing too?
 router.get("/by-email/:email", authenticate, userController.getUserByEmail);
 router.get("/:id", authenticate, userController.getUserById);
