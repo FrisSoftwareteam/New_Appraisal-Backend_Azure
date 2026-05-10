@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import User from '../models/User';
 import AttendanceRecord, { type AttendanceFlagStatus } from '../models/AttendanceRecord';
 import AttendanceException, {
@@ -223,6 +223,117 @@ export const checkOut = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ message: 'Error checking out', error });
   }
 };
+
+export const onPremCheckIn = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const dateKey = getTodayDateKey();
+    const existing = await AttendanceRecord.findOne({
+      dateKey,
+      userId: user._id
+    });
+
+    if (existing) {
+      return res.status(409).json({ message: 'You already checked in today.' });
+    }
+
+    const captureState = await getAttendanceCaptureStateForDate(dateKey, user._id);
+    if (!captureState.captureAllowed) {
+      return res.status(403).json({
+        message: getCaptureDisabledMessage(captureState.pauseReason, captureState.pauseException?.title)
+      });
+    }
+
+    const now = new Date();
+    const cutoffTime = await getAttendanceCutoffTime();
+    const checkInStatus = resolveCheckInStatus(now, cutoffTime, getAttendanceTimezone());
+    const userName = getUserName(user.firstName, user.lastName, user.email);
+    
+    const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
+    const photoPublicId = typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
+    
+    const record = await AttendanceRecord.create({
+      dateKey,
+      userId: user._id,
+      userName,
+      department: user.department,
+      checkInAt: now,
+      checkInStatus,
+      locationLabel: 'On Prem',
+      photoUrl: photoUrl || undefined,
+      photoPublicId
+    });
+
+    return res.status(201).json({
+      item: serializeAttendanceRecord(record),
+      cutoffTime
+    });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: 'You already checked in today.' });
+    }
+
+    console.error('Error checking in on prem:', error);
+    return res.status(500).json({ message: 'Error checking in on prem', error });
+  }
+};
+
+export const onPremCheckOut = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const dateKey = getTodayDateKey();
+    const record = await AttendanceRecord.findOne({
+      dateKey,
+      userId: user._id
+    });
+
+    if (!record) {
+      return res.status(404).json({ message: 'You must check in before checking out.' });
+    }
+
+    if (record.checkOutAt) {
+      return res.status(409).json({ message: 'You already checked out today.' });
+    }
+
+    const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
+    const photoPublicId = typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
+
+    record.checkOutAt = new Date();
+    record.checkOutLocationLabel = 'On Prem';
+    if (photoUrl) {
+      record.checkOutPhotoUrl = photoUrl;
+      record.checkOutPhotoPublicId = photoPublicId;
+    }
+
+    await record.save();
+
+    return res.json({
+      item: serializeAttendanceRecord(record)
+    });
+  } catch (error) {
+    console.error('Error checking out on prem:', error);
+    return res.status(500).json({ message: 'Error checking out on prem', error });
+  }
+};
+
 
 export const deleteAttendanceEntry = async (req: AuthRequest, res: Response) => {
   try {
