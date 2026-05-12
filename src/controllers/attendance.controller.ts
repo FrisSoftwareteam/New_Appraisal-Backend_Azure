@@ -889,6 +889,42 @@ export const uploadAttendancePhoto = async (req: AuthRequest, res: Response) => 
   }
 };
 
+export const uploadAttendancePhotoPublic = async (req: Request, res: Response) => {
+  try {
+    const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+    if (!dataUrl) {
+      return res.status(400).json({ message: 'Missing dataUrl.' });
+    }
+
+    if (!dataUrl.startsWith('data:image/')) {
+      return res.status(400).json({ message: 'Invalid image format.' });
+    }
+
+    if (dataUrl.length > 2_800_000) {
+      return res.status(413).json({ message: 'Image is too large. Please retake with lower quality.' });
+    }
+
+    if (!isCloudinaryReady()) {
+      return res.status(503).json({
+        message:
+          'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.'
+      });
+    }
+
+    const upload = await uploadImageDataUrlToCloudinary(dataUrl);
+
+    return res.status(201).json({
+      url: upload.url,
+      publicId: upload.publicId,
+      width: upload.width,
+      height: upload.height
+    });
+  } catch (error) {
+    console.error('Error uploading attendance photo (public):', error);
+    return res.status(500).json({ message: 'Error uploading attendance photo', error });
+  }
+};
+
 export const getNetworkLocationByIp = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
