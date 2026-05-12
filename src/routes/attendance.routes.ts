@@ -24,6 +24,7 @@ import {
   reviewAttendanceExceptionRequestForAdmin,
   updateAttendanceEntryFlagForAdmin,
   uploadAttendancePhoto,
+  uploadAttendancePhotoPublic,
   updateAttendanceExceptionForAdmin,
   updateAttendanceCaptureControlForAdmin,
   updateAttendanceSettingsForAdmin,
@@ -43,6 +44,7 @@ router.get('/me/monthly', authenticate, getMyMonthlyAttendance);
 router.get('/me/exceptions', authenticate, getMyAttendanceExceptionRequests);
 router.post('/me/exceptions', authenticate, createMyAttendanceExceptionRequest);
 router.post('/uploads/photo', authenticate, uploadAttendancePhoto);
+router.post('/uploads/photo/public', uploadAttendancePhotoPublic);
 router.get('/location/ip', authenticate, getNetworkLocationByIp);
 
 router.get('/admin/daily', authenticate, getDailyAttendanceForAdmin);
