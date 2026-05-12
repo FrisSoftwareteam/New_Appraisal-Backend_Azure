@@ -19,6 +19,7 @@ import {
   getMyAttendanceExceptionRequests,
   getMyMonthlyAttendance,
   getMyTodayAttendance,
+  getTodayAttendanceByUserId,
   getNetworkLocationByIp,
   reviewAttendanceExceptionRequestForAdmin,
   updateAttendanceEntryFlagForAdmin,
@@ -35,6 +36,7 @@ router.post('/check-in', authenticate, checkIn);
 router.post('/check-out', authenticate, checkOut);
 router.post('/on-prem-check-in', onPremCheckIn);
 router.post('/on-prem-check-out', onPremCheckOut);
+router.get('/on-prem/users/:userId/today', getTodayAttendanceByUserId);
 router.delete('/entry/:id', authenticate, deleteAttendanceEntry);
 router.get('/today', authenticate, getMyTodayAttendance);
 router.get('/me/monthly', authenticate, getMyMonthlyAttendance);
