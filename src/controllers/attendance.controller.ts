@@ -463,6 +463,44 @@ export const getMyTodayAttendance = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getTodayAttendanceByUserId = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID.' });
+    }
+
+    const user = await User.findById(userId).select('_id');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const dateKey = getTodayDateKey();
+    const [record, cutoffTime, captureState] = await Promise.all([
+      AttendanceRecord.findOne({ dateKey, userId: user._id }),
+      getAttendanceCutoffTime(),
+      getAttendanceCaptureStateForDate(dateKey, user._id)
+    ]);
+
+    return res.json({
+      date: dateKey,
+      cutoffTime,
+      item: record ? serializeAttendanceRecord(record) : null,
+      canCheckIn: !record && captureState.captureAllowed,
+      canCheckOut: Boolean(record && !record.checkOutAt),
+      captureEnabled: captureState.captureEnabled,
+      captureForcePaused: captureState.captureForcePaused,
+      weekendsAutoPaused: captureState.weekendsAutoPaused,
+      captureAllowedToday: captureState.captureAllowed,
+      capturePauseReason: captureState.pauseReason,
+      capturePauseException: captureState.pauseException
+    });
+  } catch (error) {
+    console.error('Error fetching today attendance by user ID:', error);
+    return res.status(500).json({ message: 'Error fetching today attendance', error });
+  }
+};
+
 export const getMyMonthlyAttendance = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
