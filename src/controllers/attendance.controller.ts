@@ -260,7 +260,11 @@ export const onPremCheckIn = async (req: Request, res: Response) => {
     
     const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
     const photoPublicId = typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
-    
+
+    if (!photoUrl) {
+      return res.status(400).json({ message: 'Photo evidence is required for check-in.' });
+    }
+
     const record = await AttendanceRecord.create({
       dateKey,
       userId: user._id,
@@ -269,8 +273,8 @@ export const onPremCheckIn = async (req: Request, res: Response) => {
       checkInAt: now,
       checkInStatus,
       locationLabel: 'On Prem',
-      photoUrl: photoUrl || undefined,
-      photoPublicId
+      photoUrl,
+      photoPublicId: photoPublicId || undefined
     });
 
     return res.status(201).json({
@@ -316,12 +320,14 @@ export const onPremCheckOut = async (req: Request, res: Response) => {
     const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
     const photoPublicId = typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
 
+    if (!photoUrl) {
+      return res.status(400).json({ message: 'Photo evidence is required for check-out.' });
+    }
+
     record.checkOutAt = new Date();
     record.checkOutLocationLabel = 'On Prem';
-    if (photoUrl) {
-      record.checkOutPhotoUrl = photoUrl;
-      record.checkOutPhotoPublicId = photoPublicId;
-    }
+    record.checkOutPhotoUrl = photoUrl;
+    record.checkOutPhotoPublicId = photoPublicId || undefined;
 
     await record.save();
 
