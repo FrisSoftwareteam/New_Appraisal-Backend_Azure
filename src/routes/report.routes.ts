@@ -1,5 +1,5 @@
 import express from 'express';
-import { getReportStats, getReportPeriods, exportReport as getReportExport, getAttendanceReport } from '../controllers/report.controller';
+import { getReportStats, getReportPeriods, exportReport as getReportExport, getAttendanceReport, getAttendanceAbsenceSummary } from '../controllers/report.controller';
 import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
 const router = express.Router();
@@ -13,5 +13,7 @@ router.get('/periods', authenticate, requirePermission('viewReports'), getReport
 router.get('/export', authenticate, requirePermission('viewReports'), getReportExport);
 // Export attendance and punctuality report
 router.get('/attendance', authenticate, requirePermission('viewReports'), getAttendanceReport);
+// Attendance absence summary (JSON) with date filter
+router.get('/attendance/summary', authenticate, requirePermission('viewReports'), getAttendanceAbsenceSummary);
 
 export default router;

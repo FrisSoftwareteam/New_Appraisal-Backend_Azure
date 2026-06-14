@@ -6,7 +6,10 @@ import mongoose from 'mongoose';
 import AppraisalPeriod from '../models/AppraisalPeriod';
 import AttendanceRecord from '../models/AttendanceRecord';
 import { summarizeAttendance } from '../utils/attendance-metrics';
-import { getAttendanceTimezone } from '../services/attendance.service';
+import {
+  getAttendanceTimezone,
+  getAttendanceAbsenceSummaryForRange
+} from '../services/attendance.service';
 
 // Return available periods derived from appraisals (fallback when /periods is empty)
 export const getReportPeriods = async (req: Request, res: Response) => {
@@ -369,6 +372,44 @@ export const getAttendanceReport = async (req: Request, res: Response) => {
     const wsDetailed = xlsx.utils.json_to_sheet(detailedLog);
     xlsx.utils.book_append_sheet(wb, wsDetailed, "Detailed Attendance Log");
 
+    // Absence Summary Sheet (covers all expected employees, not just those with records)
+    try {
+      const absence = await getAttendanceAbsenceSummaryForRange({
+        startDate: String(startDate),
+        endDate: String(endDate),
+        userId: userId ? String(userId) : 'all'
+      });
+
+      const absenceRows = absence.employees.map((emp) => ({
+        "Employee Name": emp.name,
+        "Department": emp.department || '',
+        "Expected Days": emp.expectedDays,
+        "Present Days": emp.presentDays,
+        "Excused Days": emp.excusedDays,
+        "Absent Days": emp.absentDays,
+        "Attendance %": `${emp.attendanceRate}%`,
+        "Absent Dates": emp.absentDates.join(', ')
+      }));
+
+      const wsAbsence = xlsx.utils.json_to_sheet(
+        absenceRows.length > 0
+          ? absenceRows
+          : [{
+              "Employee Name": '',
+              "Department": '',
+              "Expected Days": '',
+              "Present Days": '',
+              "Excused Days": '',
+              "Absent Days": '',
+              "Attendance %": '',
+              "Absent Dates": ''
+            }]
+      );
+      xlsx.utils.book_append_sheet(wb, wsAbsence, "Absence Summary");
+    } catch (absenceError) {
+      console.error('Absence summary generation error:', absenceError);
+    }
+
     const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const filename = userId && userId !== 'all' && staffSummary.length > 0
@@ -382,5 +423,31 @@ export const getAttendanceReport = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Attendance Export error:', error);
     res.status(500).json({ message: 'Error generating attendance report' });
+  }
+};
+
+// Attendance absence summary (JSON) with date filter
+export const getAttendanceAbsenceSummary = async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate, userId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Start date and end date are required (YYYY-MM-DD)' });
+    }
+
+    const summary = await getAttendanceAbsenceSummaryForRange({
+      startDate: String(startDate),
+      endDate: String(endDate),
+      userId: userId ? String(userId) : 'all'
+    });
+
+    res.json(summary);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error generating absence summary';
+    if (/Invalid date|Start date must|Invalid user/.test(message)) {
+      return res.status(400).json({ message });
+    }
+    console.error('Absence summary error:', error);
+    res.status(500).json({ message: 'Error generating absence summary' });
   }
 };
