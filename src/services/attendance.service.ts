@@ -4,10 +4,12 @@ import AttendanceRecord, {
   IAttendanceRecord
 } from '../models/AttendanceRecord';
 import AttendanceSetting from '../models/AttendanceSetting';
+import User from '../models/User';
 import {
   countDateKeysInRange,
   getExceptionForUserOnDate,
   getExcusedWeekdayDateKeysForUserInRange,
+  listAttendanceExceptionsInRange,
   type SerializedAttendanceException
 } from './attendance-exception.service';
 import {
@@ -272,6 +274,206 @@ export async function getAttendanceInsightsForMonth(
   return getAttendanceInsightsForRange(userId, bounds.startKey, bounds.endKey);
 }
 
+export interface AbsenceEmployeeRow {
+  userId: string;
+  name: string;
+  department?: string;
+  expectedDays: number;
+  presentDays: number;
+  excusedDays: number;
+  absentDays: number;
+  absentDates: string[];
+  attendanceRate: number;
+}
+
+export interface AttendanceAbsenceSummary {
+  startDate: string;
+  endDate: string;
+  totals: {
+    expectedEmployees: number;
+    totalAbsentees: number;
+    totalAbsenceDays: number;
+    totalExpectedDays: number;
+    totalPresentDays: number;
+    totalExcusedDays: number;
+    overallAttendanceRate: number;
+  };
+  employees: AbsenceEmployeeRow[];
+}
+
+/**
+ * Computes per-employee absence figures for a date range.
+ * Absence = a weekday (Mon-Fri) within range that the employee was expected to work
+ * (not a company/individual approved exception and on/after their dateEmployed) and
+ * for which no attendance check-in record exists.
+ */
+export async function getAttendanceAbsenceSummaryForRange(params: {
+  startDate: string;
+  endDate: string;
+  userId?: string;
+}): Promise<AttendanceAbsenceSummary> {
+  const { startDate, endDate } = params;
+  const userId = params.userId && params.userId !== 'all' ? params.userId : undefined;
+
+  if (!isValidDateKey(startDate) || !isValidDateKey(endDate)) {
+    throw new Error('Invalid date key range');
+  }
+
+  if (startDate > endDate) {
+    throw new Error('Start date must be on or before end date');
+  }
+
+  const userFilter: Record<string, unknown> = { role: { $ne: 'guest' } };
+  if (userId) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user id');
+    }
+    userFilter._id = new mongoose.Types.ObjectId(userId);
+  }
+
+  const [users, weekdayKeys] = [
+    await User.find(userFilter)
+      .select('firstName lastName department dateEmployed role')
+      .lean(),
+    listWeekdayDateKeysInRange(startDate, endDate)
+  ];
+
+  const userIds = users.map((user) => user._id);
+
+  const [records, exceptions] = await Promise.all([
+    AttendanceRecord.find({
+      userId: { $in: userIds },
+      dateKey: { $gte: startDate, $lte: endDate }
+    })
+      .select('userId dateKey')
+      .lean(),
+    listAttendanceExceptionsInRange(startDate, endDate, { statuses: ['approved'] })
+  ]);
+
+  const presentByUser = new Map<string, Set<string>>();
+  records.forEach((record) => {
+    if (isWeekendDateKey(record.dateKey)) {
+      return;
+    }
+    const uid = record.userId.toString();
+    if (!presentByUser.has(uid)) {
+      presentByUser.set(uid, new Set<string>());
+    }
+    presentByUser.get(uid)!.add(record.dateKey);
+  });
+
+  const companyExcused = new Set<string>();
+  const individualExcusedByUser = new Map<string, Set<string>>();
+  exceptions.forEach((exception) => {
+    const start = exception.startDateKey > startDate ? exception.startDateKey : startDate;
+    const end = exception.endDateKey < endDate ? exception.endDateKey : endDate;
+    const keys = listWeekdayDateKeysInRange(start, end);
+
+    if (exception.scope === 'company') {
+      keys.forEach((key) => companyExcused.add(key));
+      return;
+    }
+
+    if (!exception.userId) {
+      return;
+    }
+
+    const uid = exception.userId.toString();
+    if (!individualExcusedByUser.has(uid)) {
+      individualExcusedByUser.set(uid, new Set<string>());
+    }
+    const set = individualExcusedByUser.get(uid)!;
+    keys.forEach((key) => set.add(key));
+  });
+
+  let totalAbsentees = 0;
+  let totalAbsenceDays = 0;
+  let totalExpectedDays = 0;
+  let totalPresentDays = 0;
+  let totalExcusedDays = 0;
+
+  const employees: AbsenceEmployeeRow[] = users.map((user) => {
+    const uid = user._id.toString();
+    const present = presentByUser.get(uid) ?? new Set<string>();
+    const individualExcused = individualExcusedByUser.get(uid);
+    const employedKey = user.dateEmployed
+      ? toDateKeyInTimeZone(new Date(user.dateEmployed as Date), ATTENDANCE_TIMEZONE)
+      : null;
+
+    let expectedDays = 0;
+    let presentDays = 0;
+    let excusedDays = 0;
+    const absentDates: string[] = [];
+
+    weekdayKeys.forEach((key) => {
+      if (employedKey && key < employedKey) {
+        return;
+      }
+
+      const isExcused = companyExcused.has(key) || (individualExcused?.has(key) ?? false);
+      if (isExcused) {
+        excusedDays += 1;
+        return;
+      }
+
+      expectedDays += 1;
+      if (present.has(key)) {
+        presentDays += 1;
+      } else {
+        absentDates.push(key);
+      }
+    });
+
+    const absentDays = absentDates.length;
+    const attendanceRate =
+      expectedDays > 0 ? Math.round((presentDays / expectedDays) * 1000) / 10 : 0;
+
+    if (absentDays > 0) {
+      totalAbsentees += 1;
+    }
+    totalAbsenceDays += absentDays;
+    totalExpectedDays += expectedDays;
+    totalPresentDays += presentDays;
+    totalExcusedDays += excusedDays;
+
+    return {
+      userId: uid,
+      name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Unknown',
+      department: (user.department as string | undefined) ?? undefined,
+      expectedDays,
+      presentDays,
+      excusedDays,
+      absentDays,
+      absentDates,
+      attendanceRate
+    };
+  });
+
+  employees.sort(
+    (a, b) => b.absentDays - a.absentDays || a.name.localeCompare(b.name)
+  );
+
+  const overallAttendanceRate =
+    totalExpectedDays > 0
+      ? Math.round((totalPresentDays / totalExpectedDays) * 1000) / 10
+      : 0;
+
+  return {
+    startDate,
+    endDate,
+    totals: {
+      expectedEmployees: users.length,
+      totalAbsentees,
+      totalAbsenceDays,
+      totalExpectedDays,
+      totalPresentDays,
+      totalExcusedDays,
+      overallAttendanceRate
+    },
+    employees
+  };
+}
+
 export function getTodayDateKey() {
   return toDateKeyInTimeZone(new Date(), ATTENDANCE_TIMEZONE);
 }
@@ -325,6 +527,26 @@ function parseBooleanEnv(value: string | undefined, fallback: boolean) {
   }
 
   return fallback;
+}
+
+function listWeekdayDateKeysInRange(startDateKey: string, endDateKey: string): string[] {
+  if (!isValidDateKey(startDateKey) || !isValidDateKey(endDateKey) || startDateKey > endDateKey) {
+    return [];
+  }
+
+  const keys: string[] = [];
+  const cursor = new Date(`${startDateKey}T00:00:00.000Z`);
+  const end = new Date(`${endDateKey}T00:00:00.000Z`);
+
+  while (cursor <= end) {
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      keys.push(cursor.toISOString().slice(0, 10));
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return keys;
 }
 
 export function isWeekendDateKey(dateKey: string) {
