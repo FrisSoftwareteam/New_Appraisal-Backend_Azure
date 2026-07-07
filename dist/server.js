@@ -38,6 +38,7 @@ const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const appraisal_admin_edit_routes_1 = __importDefault(require("./routes/appraisal-admin-edit.routes"));
 const attendance_routes_1 = __importDefault(require("./routes/attendance.routes"));
 const training_routes_1 = __importDefault(require("./routes/training.routes"));
+const leaveRequest_routes_1 = __importDefault(require("./routes/leaveRequest.routes"));
 const error_middleware_1 = require("./middleware/error.middleware");
 const cloudinary_1 = require("./config/cloudinary");
 const cloudinaryConfigured = (0, cloudinary_1.configureCloudinary)();
@@ -74,6 +75,7 @@ app.use('/api', periodStaffAssignment_routes_1.default);
 app.use('/api/reports', report_routes_1.default);
 app.use('/api/attendance', attendance_routes_1.default);
 app.use('/api/training', training_routes_1.default);
+app.use('/api/leave-requests', leaveRequest_routes_1.default);
 app.get('/', (req, res) => {
     res.json({ message: 'HR Appraisal System API is running' });
 });
@@ -114,11 +116,11 @@ mongoose_1.default.connection.on('disconnected', () => {
 });
 // Connect
 const mongooseOptions = {
-    serverSelectionTimeoutMS: 30000, // Increased to 30s to allow for network latency/failover
-    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-    maxPoolSize: 10, // Maintain up to 10 socket connections
-    family: 4, // Use IPv4, skip trying IPv6
-    autoIndex: false // Don't build indexes in production
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    maxPoolSize: 10,
+    family: 4,
+    autoIndex: false
 };
 // Start server regardless of DB connection status
 const server = app.listen(PORT, () => {

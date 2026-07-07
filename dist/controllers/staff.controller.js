@@ -51,6 +51,7 @@ const User_1 = __importDefault(require("../models/User"));
 const PendingStaff_1 = __importDefault(require("../models/PendingStaff"));
 const Appraisal_1 = __importDefault(require("../models/Appraisal"));
 const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
+const period_utils_1 = require("../utils/period-utils");
 const AppraisalTemplate_1 = __importDefault(require("../models/AppraisalTemplate"));
 // Get all staff with optional filtering
 const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -600,8 +601,8 @@ exports.deleteAllStaff = deleteAllStaff;
 const getStaffStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const totalEmployees = yield User_1.default.countDocuments({ role: { $nin: ['guest', 'super_admin'] } });
-        // Find active period
-        const activePeriod = yield AppraisalPeriod_1.default.findOne({ status: 'active' });
+        // Find active period (excludes elapsed: endDate >= today)
+        const activePeriod = yield AppraisalPeriod_1.default.findOne((0, period_utils_1.getNonElapsedActivePeriodFilter)());
         let activeInCycle = 0;
         let pendingAssignment = 0;
         if (activePeriod) {

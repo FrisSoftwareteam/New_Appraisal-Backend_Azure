@@ -39,7 +39,7 @@ const AppraisalQuestionSchema = new mongoose_1.Schema({
     text: { type: String, required: true },
     type: {
         type: String,
-        enum: ["rating", "text", "multiple_choice"],
+        enum: ["rating", "text", "multiple_choice", "attendance", "punctuality"],
         required: true
     },
     category: { type: String, required: true },
