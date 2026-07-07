@@ -20,9 +20,10 @@ const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
 const User_1 = __importDefault(require("../models/User"));
 const PeriodStaffAssignment_1 = __importDefault(require("../models/PeriodStaffAssignment"));
 const audit_controller_1 = require("./audit.controller");
+const email_service_1 = require("../services/email.service");
 // Initiate an appraisal for an employee
 const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     try {
         const { employeeId, templateId, workflowId, period, assignments } = req.body;
         // Verify existence
@@ -96,6 +97,11 @@ const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, functi
         }
         // Audit Log
         yield (0, audit_controller_1.createAuditLog)((_c = (_b = req.user) === null || _b === void 0 ? void 0 : _b._id) === null || _c === void 0 ? void 0 : _c.toString(), 'create', 'appraisal', appraisal._id.toString(), `Initiated appraisal for ${employee.firstName} ${employee.lastName} - ${period}`, undefined, { templateId, workflowId, period });
+        const emp = employee;
+        const firstStepName = ((_e = (_d = appraisalFlow.steps) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.name) || 'Self Assessment';
+        if (emp.email) {
+            (0, email_service_1.notifyAppraisalInitiated)(emp.email, `${emp.firstName} ${emp.lastName}`, period, firstStepName).catch(() => { });
+        }
         res.status(201).json(appraisal);
     }
     catch (error) {
@@ -106,7 +112,7 @@ const initiateAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, functi
 exports.initiateAppraisal = initiateAppraisal;
 // Submit Review (Generic for any step)
 const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
     try {
         const { id } = req.params;
         const { stepId, responses, overallScore, comments } = req.body;
@@ -212,6 +218,25 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         yield appraisal.save();
         // Audit Log
         yield (0, audit_controller_1.createAuditLog)((_o = (_m = req.user) === null || _m === void 0 ? void 0 : _m._id) === null || _o === void 0 ? void 0 : _o.toString(), 'submit_review', 'appraisal', appraisal._id.toString(), `Review submitted for step: ${currentStepConfig.name} by ${(_p = req.user) === null || _p === void 0 ? void 0 : _p.role}`, undefined, { stepId, overallScore });
+        // Email notifications (fire-and-forget)
+        const reviewerName = `${(_q = req.user) === null || _q === void 0 ? void 0 : _q.firstName} ${(_r = req.user) === null || _r === void 0 ? void 0 : _r.lastName}`;
+        if (!isReviewerEmployee) {
+            const emp = yield User_1.default.findById(appraisal.employee).select('email firstName lastName').lean();
+            if (emp === null || emp === void 0 ? void 0 : emp.email) {
+                (0, email_service_1.notifyAppraisalPendingAcceptance)(emp.email, `${emp.firstName} ${emp.lastName}`, reviewerName, currentStepConfig.name).catch(() => { });
+            }
+        }
+        else if (nextStep) {
+            const nextStepId = nextStep._id || nextStep.id;
+            const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+            if (nextAssignment === null || nextAssignment === void 0 ? void 0 : nextAssignment.assignedUser) {
+                const assignee = yield User_1.default.findById(nextAssignment.assignedUser).select('email firstName lastName').lean();
+                const emp = yield User_1.default.findById(appraisal.employee).select('firstName lastName').lean();
+                if ((assignee === null || assignee === void 0 ? void 0 : assignee.email) && emp) {
+                    (0, email_service_1.notifyAppraisalStepAssigned)(assignee.email, `${assignee.firstName} ${assignee.lastName}`, `${emp.firstName} ${emp.lastName}`, nextStep.name, appraisal.period).catch(() => { });
+                }
+            }
+        }
         res.json(appraisal);
     }
     catch (error) {
@@ -222,7 +247,7 @@ const submitReview = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.submitReview = submitReview;
 // Reject Appraisal (Request Changes)
 const rejectAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
         const { id } = req.params;
         const { reason } = req.body;
@@ -276,6 +301,22 @@ const rejectAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function
         // Audit Log
         yield (0, audit_controller_1.createAuditLog)((_d = (_c = req.user) === null || _c === void 0 ? void 0 : _c._id) === null || _d === void 0 ? void 0 : _d.toString(), 'appraisal_rejected', 'appraisal', appraisal._id.toString(), `Appraisal rejected/returned by ${(_e = req.user) === null || _e === void 0 ? void 0 : _e.role}: ${reason}`);
         yield appraisal.save();
+        // Email notification — notify the person who needs to revise
+        const rejectorRole = ((_g = (_f = req.user) === null || _f === void 0 ? void 0 : _f.role) === null || _g === void 0 ? void 0 : _g.replace(/_/g, ' ')) || 'Reviewer';
+        const emp = yield User_1.default.findById(appraisal.employee).select('email firstName lastName').lean();
+        const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+        if (appraisal.status === 'in_progress') {
+            const workflow = appraisal.workflow;
+            const stepConfig = workflow.steps[appraisal.currentStep];
+            const stepId = (stepConfig === null || stepConfig === void 0 ? void 0 : stepConfig._id) || (stepConfig === null || stepConfig === void 0 ? void 0 : stepConfig.id);
+            const assignment = appraisal.stepAssignments.find(sa => sa.stepId === (stepId === null || stepId === void 0 ? void 0 : stepId.toString()));
+            if (assignment === null || assignment === void 0 ? void 0 : assignment.assignedUser) {
+                const assignee = yield User_1.default.findById(assignment.assignedUser).select('email firstName lastName').lean();
+                if (assignee === null || assignee === void 0 ? void 0 : assignee.email) {
+                    (0, email_service_1.notifyAppraisalRejected)(assignee.email, `${assignee.firstName} ${assignee.lastName}`, empName, rejectorRole, reason).catch(() => { });
+                }
+            }
+        }
         res.json(appraisal);
     }
     catch (error) {
@@ -348,6 +389,26 @@ const acceptAppraisal = (req, res) => __awaiter(void 0, void 0, void 0, function
             yield (0, audit_controller_1.createAuditLog)((_m = (_l = req.user) === null || _l === void 0 ? void 0 : _l._id) === null || _m === void 0 ? void 0 : _m.toString(), 'appraisal_completed', 'appraisal', appraisal._id.toString(), 'Appraisal finalized and accepted by employee');
         }
         yield appraisal.save();
+        // Email notifications (fire-and-forget)
+        const emp = yield User_1.default.findById(appraisal.employee).select('email firstName lastName').lean();
+        const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+        if (appraisal.status === 'completed' && (emp === null || emp === void 0 ? void 0 : emp.email)) {
+            (0, email_service_1.notifyAppraisalCompleted)(emp.email, empName, appraisal.period).catch(() => { });
+        }
+        else if (appraisal.status === 'in_progress') {
+            const workflow = appraisal.workflow;
+            const nextStepConfig = workflow.steps[appraisal.currentStep];
+            if (nextStepConfig) {
+                const nextStepId = nextStepConfig._id || nextStepConfig.id;
+                const nextAssignment = appraisal.stepAssignments.find(sa => sa.stepId === nextStepId.toString());
+                if (nextAssignment === null || nextAssignment === void 0 ? void 0 : nextAssignment.assignedUser) {
+                    const assignee = yield User_1.default.findById(nextAssignment.assignedUser).select('email firstName lastName').lean();
+                    if (assignee === null || assignee === void 0 ? void 0 : assignee.email) {
+                        (0, email_service_1.notifyAppraisalStepAssigned)(assignee.email, `${assignee.firstName} ${assignee.lastName}`, empName, nextStepConfig.name, appraisal.period).catch(() => { });
+                    }
+                }
+            }
+        }
         res.json(appraisal);
     }
     catch (error) {

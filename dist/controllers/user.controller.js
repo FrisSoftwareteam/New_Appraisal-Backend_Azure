@@ -56,7 +56,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bulkUpdateUsers = exports.getUserByEmail = exports.deleteUser = exports.updateUser = exports.getUserById = exports.getUsers = exports.createUser = void 0;
+exports.bulkUpdateUsers = exports.getOnPremUserById = exports.getOnPremUsers = exports.getUserByEmail = exports.deleteUser = exports.updateUser = exports.getUserById = exports.getUsers = exports.createUser = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const XLSX = __importStar(require("xlsx"));
@@ -159,6 +159,29 @@ const getUserByEmail = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.getUserByEmail = getUserByEmail;
+const getOnPremUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const users = yield User_1.default.find({}).select('-password');
+        res.send(users);
+    }
+    catch (error) {
+        res.status(500).send(error);
+    }
+});
+exports.getOnPremUsers = getOnPremUsers;
+const getOnPremUserById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const user = yield User_1.default.findById(req.params.id).select('-password');
+        if (!user) {
+            return res.status(404).send();
+        }
+        res.send(user);
+    }
+    catch (error) {
+        res.status(500).send(error);
+    }
+});
+exports.getOnPremUserById = getOnPremUserById;
 // Helper to safely parse Excel dates or strings
 const parseExcelDate = (value) => {
     if (!value || value === 'NA' || value === 'N/A')

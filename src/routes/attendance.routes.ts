@@ -1,8 +1,10 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticate } from '../middleware/auth.middleware';
 import {
   checkIn,
   checkOut,
+  uploadAttendanceForOfflineMode,
   onPremCheckIn,
   onPremCheckOut,
   createMyAttendanceExceptionRequest,
@@ -32,6 +34,7 @@ import {
 } from '../controllers/attendance.controller';
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/check-in', authenticate, checkIn);
 router.post('/check-out', authenticate, checkOut);
@@ -62,5 +65,6 @@ router.delete('/admin/exceptions/:id', authenticate, deleteAttendanceExceptionFo
 router.get('/admin/exception-requests', authenticate, getAttendanceExceptionRequestsForAdmin);
 router.put('/admin/exception-requests/:id/review', authenticate, reviewAttendanceExceptionRequestForAdmin);
 router.delete('/admin/trial-data', authenticate, clearTrialDataForAdmin);
+router.post('/admin/offline-upload', authenticate, upload.single('file'), uploadAttendanceForOfflineMode);
 
 export default router;

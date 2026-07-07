@@ -14,30 +14,44 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteAllAuditLogs = exports.createAuditLog = exports.getAuditLogs = void 0;
 const AuditLog_1 = __importDefault(require("../models/AuditLog"));
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+/** Maps frontend filter values to backend action values (exact or prefix) */
+const ACTION_FILTER_MAP = {
+    create: ['create'],
+    update: ['update', 'admin_edit', 'appraisal_admin_edit'],
+    delete: ['delete'],
+    submit: ['submit', 'submit_review'],
+    approve: ['approve'],
+    reject: ['reject', 'appraisal_rejected'],
+    comment: ['comment'],
+    reassign: ['reassign'],
+    committee_review: ['committee_review'],
+    appraisal_completed: ['appraisal_completed', 'appraisal_accepted_intermediate'],
+};
 // Get audit logs with filtering and pagination
 const getAuditLogs = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { page = 1, limit = 20, action, entity, search } = req.query;
         const query = {};
-        if (action && action !== 'all') {
-            query.action = action;
+        if (action && String(action) !== 'all') {
+            const actionStr = String(action).trim();
+            const mappedActions = (_a = ACTION_FILTER_MAP[actionStr]) !== null && _a !== void 0 ? _a : [actionStr];
+            query.action = mappedActions.length === 1 ? mappedActions[0] : { $in: mappedActions };
         }
-        if (entity && entity !== 'all') {
-            query.entityType = entity;
+        if (entity && String(entity) !== 'all') {
+            query.entityType = String(entity).trim();
         }
-        // Basic search implementation (could be improved with text index)
-        if (search) {
-            // Since 'details' isn't a direct field in the model (it's constructed or part of metadata/changes),
-            // we might need to adjust this. However, looking at the frontend mock data, 'details' was a field.
-            // The model has 'changes' and 'metadata'. 
-            // Let's assume for now we search in metadata values if 'details' isn't there, 
-            // or we might need to add a 'details' field to the model if we want easy searching.
-            // For now, let's search in entityId or entityType as a fallback if no text index.
-            // Ideally, we should add a 'summary' or 'details' field to the AuditLog model for human-readable logs.
-            // I'll stick to exact matches or simple regex on fields that exist.
-            // Or, I can check if I should update the model. 
-            // The frontend mock data has a 'details' field. The backend model DOES NOT.
-            // I should update the backend model to include a 'details' string field for easier display/search.
+        const searchStr = typeof search === 'string' ? search.trim() : '';
+        if (searchStr) {
+            const searchRegex = new RegExp(escapeRegex(searchStr), 'i');
+            query.$or = [
+                { details: searchRegex },
+                { entityId: searchRegex },
+                { entityType: searchRegex },
+            ];
         }
         const logs = yield AuditLog_1.default.find(query)
             .sort({ createdAt: -1 })

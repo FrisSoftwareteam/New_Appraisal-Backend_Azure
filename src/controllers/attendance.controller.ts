@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Request, Response } from 'express';
+import * as xlsx from 'xlsx';
 import User from '../models/User';
 import AttendanceRecord, { type AttendanceFlagStatus } from '../models/AttendanceRecord';
 import AttendanceException, {
@@ -34,7 +35,8 @@ import {
   isValidDateKey,
   isValidMonthKey,
   parseCutoffTime,
-  resolveCheckInStatus
+  resolveCheckInStatus,
+  toDateKeyInTimeZone
 } from '../utils/attendance-metrics';
 import {
   isCloudinaryReady,
@@ -257,7 +259,7 @@ export const onPremCheckIn = async (req: Request, res: Response) => {
     const cutoffTime = await getAttendanceCutoffTime();
     const checkInStatus = resolveCheckInStatus(now, cutoffTime, getAttendanceTimezone());
     const userName = getUserName(user.firstName, user.lastName, user.email);
-    
+
     const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
     const photoPublicId = typeof req.body?.photoPublicId === 'string' ? req.body.photoPublicId.trim() : undefined;
 
@@ -337,6 +339,176 @@ export const onPremCheckOut = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error checking out on prem:', error);
     return res.status(500).json({ message: 'Error checking out on prem', error });
+  }
+};
+
+export const uploadAttendanceForOfflineMode = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!ensureAttendanceAdmin(req, res)) {
+      return;
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded.' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    
+    // Find first sheet that actually has data
+    let sheetName = workbook.SheetNames[0];
+    let data: any[] = [];
+    
+    for (const name of workbook.SheetNames) {
+      const sheet = workbook.Sheets[name];
+      const rows = xlsx.utils.sheet_to_json(sheet);
+      if (rows.length > 0) {
+        sheetName = name;
+        data = rows;
+        break;
+      }
+    }
+
+    const results = {
+      totalRows: data.length,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [] as string[]
+    };
+
+    const timezone = getAttendanceTimezone();
+    const cutoffTime = await getAttendanceCutoffTime();
+
+    const normalizeHeader = (header: string): string => {
+      return header.toLowerCase().replace(/[^a-z]/g, '');
+    };
+
+    let rowIndex = 1; // 1-based index (Excel row usually starts with 2 if headers are row 1)
+    for (const row of data) {
+      rowIndex++;
+      try {
+        const rowKeys = Object.keys(row);
+        const normalizedRow: any = {};
+
+        rowKeys.forEach(key => {
+          const normKey = normalizeHeader(key);
+          if (normKey === 'email' || normKey === 'emailaddress' || normKey === 'staffemail' || normKey === 'useremail') {
+            normalizedRow['email'] = row[key];
+          } else if (normKey === 'date' || normKey === 'attendancedate' || normKey === 'day') {
+            normalizedRow['date'] = row[key];
+          } else if (normKey === 'checkin' || normKey === 'checkintime' || normKey === 'timein' || normKey === 'checkinat') {
+            normalizedRow['checkIn'] = row[key];
+          } else if (normKey === 'checkout' || normKey === 'checkouttime' || normKey === 'timeout' || normKey === 'checkoutat') {
+            normalizedRow['checkOut'] = row[key];
+          }
+        });
+
+        const rawEmail = normalizedRow.email;
+        if (!rawEmail) {
+          results.skipped++;
+          results.errors.push(`Row ${rowIndex}: Missing email column.`);
+          continue;
+        }
+
+        const email = String(rawEmail).trim().toLowerCase();
+        const user = await User.findOne({ email });
+        if (!user) {
+          results.skipped++;
+          results.errors.push(`Row ${rowIndex} (${email}): Employee not found in database.`);
+          continue;
+        }
+
+        // Parse date
+        let baseDate = parseExcelDate(normalizedRow.date);
+        if (!baseDate && normalizedRow.checkIn) {
+          const checkInFullParsed = parseExcelDate(normalizedRow.checkIn);
+          if (checkInFullParsed) {
+            baseDate = checkInFullParsed;
+          }
+        }
+
+        if (!baseDate) {
+          results.skipped++;
+          results.errors.push(`Row ${rowIndex} (${email}): Missing or invalid Date.`);
+          continue;
+        }
+
+        // Parse times
+        const checkInAt = resolveDateTime(normalizedRow.checkIn, baseDate, timezone);
+        const checkOutAt = resolveDateTime(normalizedRow.checkOut, baseDate, timezone);
+
+        if (!checkInAt) {
+          results.skipped++;
+          results.errors.push(`Row ${rowIndex} (${email}): Missing or invalid Check In time.`);
+          continue;
+        }
+
+        // Generate dateKey for Mongoose index matching
+        const dateKey = toDateKeyInTimeZone(checkInAt, timezone);
+
+        // Check if record exists
+        let record = await AttendanceRecord.findOne({ dateKey, userId: user._id });
+        let hasChanges = false;
+
+        const checkInStatus = resolveCheckInStatus(checkInAt, cutoffTime, timezone);
+        const userName = getUserName(user.firstName, user.lastName, user.email);
+
+        if (record) {
+          // Compare and update Check In
+          if (Math.abs(record.checkInAt.getTime() - checkInAt.getTime()) > 1000) {
+            record.checkInAt = checkInAt;
+            record.checkInStatus = checkInStatus;
+            record.locationLabel = 'On Prem (Offline)';
+            hasChanges = true;
+          }
+
+          // Compare and update Check Out (if provided in sheet)
+          if (checkOutAt) {
+            if (!record.checkOutAt || Math.abs(record.checkOutAt.getTime() - checkOutAt.getTime()) > 1000) {
+              record.checkOutAt = checkOutAt;
+              record.checkOutLocationLabel = 'On Prem (Offline)';
+              hasChanges = true;
+            }
+          }
+
+          if (hasChanges) {
+            await record.save();
+            results.updated++;
+          } else {
+            results.skipped++;
+          }
+        } else {
+          // Create new record
+          record = new AttendanceRecord({
+            dateKey,
+            userId: user._id,
+            userName,
+            department: user.department,
+            checkInAt,
+            checkOutAt: checkOutAt || undefined,
+            checkInStatus,
+            locationLabel: 'On Prem (Offline)',
+            checkOutLocationLabel: checkOutAt ? 'On Prem (Offline)' : undefined,
+            flagStatus: 'clear'
+          });
+
+          await record.save();
+          results.created++;
+        }
+      } catch (rowError: any) {
+        console.error(`Row ${rowIndex} error:`, rowError);
+        results.skipped++;
+        results.errors.push(`Row ${rowIndex}: Internal error processing row: ${rowError.message || rowError}`);
+      }
+    }
+
+    return res.status(200).json({
+      message: 'Offline attendance upload completed.',
+      results
+    });
+  } catch (error) {
+    console.error('Error in uploadAttendanceForOfflineMode:', error);
+    return res.status(500).json({ message: 'Error processing upload attendance for offline mode', error });
   }
 };
 
@@ -1866,4 +2038,173 @@ function buildRequestTitle(type: AttendanceExceptionType) {
     default:
       return 'Attendance Exception Request';
   }
+}
+
+function getUtcDateInTimeZone(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string
+): Date {
+  const dateUtc = new Date(Date.UTC(year, month, day, hour, minute, second));
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+
+    const formattedParts = formatter.formatToParts(dateUtc);
+    const getVal = (type: string) => {
+      const p = formattedParts.find((part) => part.type === type);
+      return p ? parseInt(p.value, 10) : 0;
+    };
+
+    const tzYear = getVal('year');
+    const tzMonth = getVal('month') - 1;
+    const tzDay = getVal('day');
+    let tzHour = getVal('hour');
+    if (tzHour === 24) tzHour = 0;
+    const tzMinute = getVal('minute');
+    const tzSecond = getVal('second');
+
+    const tzTime = Date.UTC(tzYear, tzMonth, tzDay, tzHour, tzMinute, tzSecond);
+    const targetTime = Date.UTC(year, month, day, hour, minute, second);
+
+    const offsetMs = tzTime - targetTime;
+    return new Date(dateUtc.getTime() - offsetMs);
+  } catch (err) {
+    console.error('Error in getUtcDateInTimeZone, falling back to local date creation:', err);
+    return new Date(year, month, day, hour, minute, second);
+  }
+}
+
+function parseExcelDate(value: any): Date | undefined {
+  if (!value || value === 'NA' || value === 'N/A') return undefined;
+
+  if (value instanceof Date) {
+    if (!isNaN(value.getTime())) return value;
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    if (value > 25569) {
+      return new Date(Math.round((value - 25569) * 86400 * 1000));
+    }
+    return undefined;
+  }
+
+  const str = String(value).trim();
+
+  const datePartMatch = str.match(/^(\d+)[/.\-](\d+)[/.\-](\d+)/);
+  if (datePartMatch) {
+    const p1 = parseInt(datePartMatch[1], 10);
+    const p2 = parseInt(datePartMatch[2], 10);
+    let year = parseInt(datePartMatch[3], 10);
+
+    if (year < 100) year += (year < 50 ? 2000 : 1900);
+
+    let day, month, finalYear;
+    if (p1 > 31) {
+      // YYYY-MM-DD format
+      finalYear = p1;
+      month = p2 - 1;
+      day = parseInt(datePartMatch[3], 10);
+    } else {
+      finalYear = year;
+      if (p1 > 12) {
+        day = p1;
+        month = p2 - 1;
+      } else if (p2 > 12) {
+        day = p2;
+        month = p1 - 1;
+      } else {
+        day = p1;
+        month = p2 - 1;
+      }
+    }
+
+    const d = new Date(finalYear, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const parsed = new Date(value);
+  if (!isNaN(parsed.getTime())) {
+    let year = parsed.getFullYear();
+    if (year < 100) {
+      parsed.setFullYear(year + (year < 50 ? 2000 : 1900));
+    }
+    return parsed;
+  }
+
+  return undefined;
+}
+
+function resolveDateTime(value: any, baseDate: Date, timeZone: string): Date | undefined {
+  if (!value) return undefined;
+
+  const baseYear = baseDate.getFullYear();
+  const baseMonth = baseDate.getMonth();
+  const baseDay = baseDate.getDate();
+
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return getUtcDateInTimeZone(
+      baseYear,
+      baseMonth,
+      baseDay,
+      value.getUTCHours(),
+      value.getUTCMinutes(),
+      value.getUTCSeconds(),
+      timeZone
+    );
+  }
+
+  if (typeof value === 'number') {
+    const timePart = value - Math.floor(value);
+    const totalSeconds = Math.round(timePart * 86400);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return getUtcDateInTimeZone(baseYear, baseMonth, baseDay, hours, minutes, seconds, timeZone);
+  }
+
+  const str = String(value).trim();
+
+  const fullParsed = parseExcelDate(str);
+  if (fullParsed && fullParsed.getFullYear() > 2000) {
+    return getUtcDateInTimeZone(
+      baseYear,
+      baseMonth,
+      baseDay,
+      fullParsed.getHours(),
+      fullParsed.getMinutes(),
+      fullParsed.getSeconds(),
+      timeZone
+    );
+  }
+
+  const timeMatch = str.match(/(\d+):(\d+)(?::(\d+))?\s*(am|pm)?/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+    const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+
+    if (ampm === 'pm' && hours < 12) {
+      hours += 12;
+    } else if (ampm === 'am' && hours === 12) {
+      hours = 0;
+    }
+    return getUtcDateInTimeZone(baseYear, baseMonth, baseDay, hours, minutes, seconds, timeZone);
+  }
+
+  return undefined;
 }

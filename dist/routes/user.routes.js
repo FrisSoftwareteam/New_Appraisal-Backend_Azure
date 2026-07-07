@@ -45,6 +45,8 @@ const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage()
 // Only admins can manage users
 router.post("/", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), userController.createUser);
 router.post("/bulk-update", auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)("manageUsers"), upload.single("file"), userController.bulkUpdateUsers);
+router.get("/on-prem-users", userController.getOnPremUsers);
+router.get("/on-prem-users/:id", userController.getOnPremUserById);
 router.get("/", auth_middleware_1.authenticate, userController.getUsers); // Maybe restrict listing too?
 router.get("/by-email/:email", auth_middleware_1.authenticate, userController.getUserByEmail);
 router.get("/:id", auth_middleware_1.authenticate, userController.getUserById);

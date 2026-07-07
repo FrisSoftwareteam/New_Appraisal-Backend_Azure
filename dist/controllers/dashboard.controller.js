@@ -18,6 +18,7 @@ const User_1 = __importDefault(require("../models/User"));
 const Appraisal_1 = __importDefault(require("../models/Appraisal"));
 const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
 const AuditLog_1 = __importDefault(require("../models/AuditLog"));
+const period_utils_1 = require("../utils/period-utils");
 const ADMIN_ROLES = new Set([
     'hr_admin',
     'hr_officer',
@@ -68,7 +69,14 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
 });
 exports.getDashboardStats = getDashboardStats;
 const getOrganizationStats = (res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c;
+    // Resolve "last period" for score distribution: most recent by startDate,
+    // excluding elapsed periods (active/extended with endDate < today)
+    const lastPeriod = yield AppraisalPeriod_1.default.findOne((0, period_utils_1.getLastRelevantPeriodFilter)())
+        .sort({ startDate: -1 })
+        .select('name')
+        .lean();
+    const lastPeriodName = (_a = lastPeriod === null || lastPeriod === void 0 ? void 0 : lastPeriod.name) !== null && _a !== void 0 ? _a : null;
     const [totalEmployees, statusCounts, completedScoreStats, departmentStats, recentPending, scoreDistribution, periods, recentActivity] = yield Promise.all([
         User_1.default.countDocuments({ role: { $nin: ['guest', 'super_admin'] } }),
         Appraisal_1.default.aggregate([
@@ -125,25 +133,33 @@ const getOrganizationStats = (res) => __awaiter(void 0, void 0, void 0, function
             .populate('employee', 'firstName lastName department avatar')
             .populate('workflow', 'name')
             .lean(),
-        Appraisal_1.default.aggregate([
-            { $match: { status: 'completed' } },
-            {
-                $group: {
-                    _id: {
-                        $switch: {
-                            branches: [
-                                { case: { $gte: ['$overallScore', 4.5] }, then: '4.5 - 5.0' },
-                                { case: { $gte: ['$overallScore', 4.0] }, then: '4.0 - 4.4' },
-                                { case: { $gte: ['$overallScore', 3.5] }, then: '3.5 - 3.9' },
-                                { case: { $gte: ['$overallScore', 3.0] }, then: '3.0 - 3.4' }
-                            ],
-                            default: 'Below 3.0'
-                        }
-                    },
-                    count: { $sum: 1 }
+        lastPeriodName
+            ? Appraisal_1.default.aggregate([
+                { $match: { status: 'completed', period: lastPeriodName } },
+                {
+                    $addFields: {
+                        effectiveScore: { $ifNull: ['$adminEditedVersion.overallScore', '$overallScore'] }
+                    }
+                },
+                { $match: { effectiveScore: { $type: 'number' } } },
+                {
+                    $group: {
+                        _id: {
+                            $switch: {
+                                branches: [
+                                    { case: { $gte: ['$effectiveScore', 4.5] }, then: '4.5 - 5.0' },
+                                    { case: { $gte: ['$effectiveScore', 4.0] }, then: '4.0 - 4.4' },
+                                    { case: { $gte: ['$effectiveScore', 3.5] }, then: '3.5 - 3.9' },
+                                    { case: { $gte: ['$effectiveScore', 3.0] }, then: '3.0 - 3.4' }
+                                ],
+                                default: 'Below 3.0'
+                            }
+                        },
+                        count: { $sum: 1 }
+                    }
                 }
-            }
-        ]),
+            ])
+            : Promise.resolve([]),
         AppraisalPeriod_1.default.find()
             .select('_id name description status startDate endDate')
             .sort({ startDate: -1 })
@@ -158,7 +174,7 @@ const getOrganizationStats = (res) => __awaiter(void 0, void 0, void 0, function
     ]);
     const completedAppraisals = countByStatus(statusCounts, 'completed');
     const pendingAppraisals = countByStatus(statusCounts, PENDING_STATUSES);
-    const averageScore = (_b = (_a = completedScoreStats[0]) === null || _a === void 0 ? void 0 : _a.averageScore) !== null && _b !== void 0 ? _b : 0;
+    const averageScore = (_c = (_b = completedScoreStats[0]) === null || _b === void 0 ? void 0 : _b.averageScore) !== null && _c !== void 0 ? _c : 0;
     const completionRate = totalEmployees > 0 ? (completedAppraisals / totalEmployees) * 100 : 0;
     setNoCacheHeaders(res);
     return res.send({
@@ -179,10 +195,10 @@ const getOrganizationStats = (res) => __awaiter(void 0, void 0, void 0, function
         })),
         workflow: buildWorkflowStats(statusCounts),
         pendingReviews: recentPending,
-        scoreDistribution: scoreDistribution.map((item) => ({
-            range: item._id,
-            count: item.count
-        })),
+        scoreDistribution: lastPeriodName
+            ? scoreDistribution.map((item) => ({ range: item._id, count: item.count }))
+            : [],
+        scoreDistributionPeriod: lastPeriodName,
         periods,
         recentActivity,
         isPersonal: false
@@ -222,7 +238,7 @@ const getPersonalStats = (res, userId) => __awaiter(void 0, void 0, void 0, func
             .populate('employee', 'firstName lastName department avatar')
             .populate('workflow', 'name')
             .lean(),
-        AppraisalPeriod_1.default.find({ status: { $in: ['active', 'extended'] } })
+        AppraisalPeriod_1.default.find((0, period_utils_1.getNonElapsedActivePeriodFilter)())
             .select('_id name description status startDate endDate')
             .sort({ startDate: -1 })
             .limit(5)
