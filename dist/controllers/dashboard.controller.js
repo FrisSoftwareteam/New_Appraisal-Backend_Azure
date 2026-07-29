@@ -28,7 +28,9 @@ const ADMIN_ROLES = new Set([
     'supervisor',
     'unit_head',
     'coo',
-    'appraisal_committee'
+    'appraisal_committee',
+    'head_of_corporate_services',
+    'ceo'
 ]);
 const PENDING_STATUSES = [
     'setup',

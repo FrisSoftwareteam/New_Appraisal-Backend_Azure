@@ -475,7 +475,9 @@ exports.getPendingAppraisals = getPendingAppraisals;
 // Get All Appraisals (Admin/HR)
 const getAllAppraisals = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const appraisals = yield Appraisal_1.default.find()
+        const { employeeId } = req.query;
+        const filter = employeeId ? { employee: employeeId } : {};
+        const appraisals = yield Appraisal_1.default.find(filter)
             .populate('employee', 'firstName lastName email department')
             .populate('template', 'name')
             .populate('workflow')

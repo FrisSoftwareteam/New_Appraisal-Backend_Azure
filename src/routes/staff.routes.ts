@@ -11,7 +11,9 @@ import {
   resolvePendingStaff,
   deletePendingStaff,
   deleteAllStaff,
-  getStaffStats
+  getStaffStats,
+  updateStaffNotch,
+  bulkImportSalaryData
 } from '../controllers/staff.controller';
 import { authenticate, requirePermission } from '../middleware/auth.middleware';
 
@@ -32,6 +34,9 @@ router.delete('/pending/:id', authenticate, requirePermission('manageUsers'), de
 // Bulk actions
 router.delete('/all', authenticate, requirePermission('manageUsers'), deleteAllStaff);
 
+// Change a staff member's notch (distinct, audited HR action)
+router.patch('/:id/notch', authenticate, requirePermission('manageSalarySettings'), updateStaffNotch);
+
 // Update staff member
 router.patch('/:id', authenticate, requirePermission('manageUsers'), updateStaff);
 
@@ -43,6 +48,15 @@ router.post('/:id/exclude', authenticate, requirePermission('manageUsers'), excl
 
 // Import staff from Excel
 router.post('/import', authenticate, requirePermission('manageUsers'), upload.single('file'), importStaff);
+
+// Bulk seed notch + initial leave-balance carryover for existing staff
+router.post(
+  '/bulk-import-salary-data',
+  authenticate,
+  requirePermission('manageSalarySettings'),
+  upload.single('file'),
+  bulkImportSalaryData
+);
 
 // Get unique filter options
 router.get('/filters', authenticate, getStaffFilters);

@@ -17,6 +17,18 @@ function getTransporter(): nodemailer.Transporter {
   return _transporter;
 }
 
+const APP_URL = process.env.FRONTEND_URL || 'https://fris-appraisal-app.vercel.app/';
+
+function ctaButton(url: string, label: string): string {
+  return `<table cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+    <tr>
+      <td style="border-radius:6px;background:#2563eb;">
+        <a href="${url}" style="display:inline-block;padding:10px 20px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">${label}</a>
+      </td>
+    </tr>
+  </table>`;
+}
+
 function wrap(title: string, body: string): string {
   return `
 <!DOCTYPE html>
@@ -34,11 +46,11 @@ function wrap(title: string, body: string): string {
         <tr>
           <td style="padding:24px;">
             ${body}
+            ${ctaButton(APP_URL, 'Open FRIS HR System')}
           </td>
         </tr>
         <tr>
           <td style="padding:16px 24px;border-top:1px solid #e4e4e7;color:#71717a;font-size:12px;">
-            <p style="margin:0 0 8px;">Access the application here: <a href="https://fris-appraisal-app.vercel.app/" style="color:#2563eb;text-decoration:none;font-weight:500;">https://fris-appraisal-app.vercel.app/</a></p>
             This is an automated notification. Please do not reply to this email.
           </td>
         </tr>
@@ -92,7 +104,7 @@ async function send({ to, subject, title, body }: SendOptions): Promise<void> {
   if (recipients.length === 0) return;
 
   const fromEmail = process.env.EMAIL_USER || 'noreply@app.com';
-  const from = `"FRIS HR SYSTEM" <${fromEmail}>`;
+  const from = process.env.EMAIL_FROM || `"FRIS HR SYSTEM" <${fromEmail}>`;
 
   try {
     console.log(`[Email] Sending to: ${recipients.join(', ')} | Subject: ${subject}`);
@@ -214,6 +226,58 @@ export async function notifyLeaveRejected(
   });
 }
 
+export async function notifyReturnFromLeaveSubmitted(
+  hrEmail: string,
+  hrName: string,
+  applicantName: string,
+  startDate: string,
+  endDate: string,
+  actualReturnDate: string,
+) {
+  await send({
+    to: hrEmail,
+    subject: `Return From Leave Confirmation Needed — ${applicantName}`,
+    title: 'Return From Leave Pending Confirmation',
+    body:
+      paragraph(`Hi ${hrName}, <strong>${applicantName}</strong> has marked themselves as returned from leave.`) +
+      infoTable([
+        ['Approved Dates', `${startDate} — ${endDate}`],
+        ['Claimed Return Date', actualReturnDate],
+      ]) +
+      paragraph('Please log in to the app to confirm or reject this return.'),
+  });
+}
+
+export async function notifyReturnFromLeaveReviewed(
+  applicantEmail: string,
+  applicantName: string,
+  decision: 'confirmed' | 'rejected',
+  reviewerName: string,
+  reviewNote?: string,
+  daysRefunded?: number,
+) {
+  await send({
+    to: applicantEmail,
+    subject: decision === 'confirmed' ? 'Return From Leave Confirmed' : 'Return From Leave Not Confirmed',
+    title: decision === 'confirmed' ? 'Return From Leave Confirmed' : 'Return From Leave Not Confirmed',
+    body:
+      (decision === 'confirmed'
+        ? paragraph(`Hi ${applicantName}, ${reviewerName} has confirmed that you have returned from leave.`) +
+          infoTable([
+            ['Status', badge('Confirmed', 'green')],
+            ...(daysRefunded && daysRefunded > 0
+              ? ([['Days Credited Back', `${daysRefunded}`]] as [string, string][])
+              : []),
+          ])
+        : paragraph(`Hi ${applicantName}, ${reviewerName} was unable to confirm your return from leave.`) +
+          infoTable([
+            ['Status', badge('Not Confirmed', 'red')],
+            ...(reviewNote ? ([['Note', reviewNote]] as [string, string][]) : []),
+          ]) +
+          paragraph('Please contact HR or mark your return again once you are back at work.')),
+  });
+}
+
 // ─── Appraisal Flow Notifications ────────────────────────────────────
 
 export async function notifyAppraisalInitiated(
@@ -330,5 +394,62 @@ export async function notifyAppraisalStepAssigned(
         ['Period', period],
       ]) +
       paragraph('Please log in to the app to complete your review.'),
+  });
+}
+
+// ─── Achievement Notifications ───────────────────────────────────────
+
+export async function notifyAchievementSubmitted(
+  hrEmail: string,
+  hrName: string,
+  submitterName: string,
+  categoryLabel: string,
+  title: string,
+) {
+  await send({
+    to: hrEmail,
+    subject: `Achievement Pending Verification — ${submitterName}`,
+    title: 'New Achievement Pending Verification',
+    body:
+      paragraph(`Hi ${hrName}, <strong>${submitterName}</strong> submitted a new ${categoryLabel.toLowerCase()} for your review.`) +
+      infoTable([
+        ['Submitted By', submitterName],
+        ['Category', badge(categoryLabel, 'blue')],
+        ['Title', title],
+      ]) +
+      paragraph('Please log in to the app to verify or reject this submission.'),
+  });
+}
+
+export async function notifyAchievementReviewed(
+  submitterEmail: string,
+  submitterName: string,
+  categoryLabel: string,
+  title: string,
+  decision: 'approved' | 'rejected',
+  reviewerName: string,
+  reviewNote?: string,
+) {
+  const isApproved = decision === 'approved';
+  await send({
+    to: submitterEmail,
+    subject: isApproved ? `Achievement Verified — ${title}` : `Achievement Not Verified — ${title}`,
+    title: isApproved ? 'Achievement Verified' : 'Achievement Not Verified',
+    body: isApproved
+      ? paragraph(`Hi ${submitterName}, your ${categoryLabel.toLowerCase()} has been <strong>verified</strong> and added to your profile.`) +
+        infoTable([
+          ['Category', badge(categoryLabel, 'blue')],
+          ['Title', title],
+          ['Verified By', reviewerName],
+          ['Status', badge('Verified', 'green')],
+        ])
+      : paragraph(`Hi ${submitterName}, your submitted ${categoryLabel.toLowerCase()} could not be verified.`) +
+        infoTable([
+          ['Category', badge(categoryLabel, 'blue')],
+          ['Title', title],
+          ['Reviewed By', reviewerName],
+          ['Status', badge('Not Verified', 'red')],
+          ...(reviewNote ? ([['Note', reviewNote]] as [string, string][]) : []),
+        ]),
   });
 }

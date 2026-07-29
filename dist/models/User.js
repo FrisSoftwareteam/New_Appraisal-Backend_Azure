@@ -52,7 +52,9 @@ const UserSchema = new mongoose_1.Schema({
             "coo",
             "appraisal_committee",
             "employee",
-            "guest"
+            "guest",
+            "head_of_corporate_services",
+            "ceo"
         ],
         default: "employee"
     },
@@ -61,6 +63,7 @@ const UserSchema = new mongoose_1.Schema({
     division: { type: String, required: true },
     unit: { type: String },
     grade: { type: String, required: true },
+    notch: { type: Number, min: 1, max: 20 },
     jobTitle: { type: String },
     designation: { type: String },
     gender: { type: String },
@@ -88,4 +91,10 @@ const UserSchema = new mongoose_1.Schema({
     isFirstLogin: { type: Boolean, default: true },
 }, { timestamps: true });
 UserSchema.index({ role: 1 });
+// Backs getAllStaff's department/division/grade filters.
+UserSchema.index({ department: 1 });
+UserSchema.index({ division: 1 });
+UserSchema.index({ grade: 1 });
+// Backs the leave-balances list sort.
+UserSchema.index({ lastName: 1, firstName: 1 });
 exports.default = mongoose_1.default.model('User', UserSchema);

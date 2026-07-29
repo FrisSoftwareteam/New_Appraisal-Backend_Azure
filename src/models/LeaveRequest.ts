@@ -4,16 +4,19 @@ export const LEAVE_TYPES = ['annual_leave', 'casual_leave', 'compassionate_leave
 export const LEAVE_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'] as const;
 export const APPROVAL_STEP_STATUSES = ['pending', 'approved', 'rejected'] as const;
 export const LEAVE_ALLOWANCE_OPTIONS = ['already_claimed', 'required', 'not_required'] as const;
+export const RETURN_STATUSES = ['not_marked', 'pending_confirmation', 'confirmed', 'rejected'] as const;
 
 export type LeaveType = (typeof LEAVE_TYPES)[number];
 export type LeaveRequestStatus = (typeof LEAVE_REQUEST_STATUSES)[number];
 export type ApprovalStepStatus = (typeof APPROVAL_STEP_STATUSES)[number];
 export type LeaveAllowanceType = (typeof LEAVE_ALLOWANCE_OPTIONS)[number];
+export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 
 export interface IApprovalStep {
   label: string;
   approverId: mongoose.Types.ObjectId | null;
   approverName: string;
+  approverRole?: string | null;
   status: ApprovalStepStatus;
   comment?: string;
   actionAt?: Date;
@@ -37,6 +40,15 @@ export interface ILeaveRequest extends Document {
 
   exceptionId?: mongoose.Types.ObjectId;
 
+  returnStatus: ReturnStatus;
+  actualReturnDateKey?: string;
+  returnMarkedAt?: Date;
+  returnReviewedById?: mongoose.Types.ObjectId;
+  returnReviewedByName?: string;
+  returnReviewedAt?: Date;
+  returnReviewNote?: string;
+  daysRefunded?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +58,7 @@ const ApprovalStepSchema = new Schema<IApprovalStep>(
     label: { type: String, required: true, trim: true },
     approverId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     approverName: { type: String, required: true, trim: true },
+    approverRole: { type: String, default: null },
     status: {
       type: String,
       enum: APPROVAL_STEP_STATUSES,
@@ -85,6 +98,15 @@ const LeaveRequestSchema = new Schema<ILeaveRequest>(
     },
 
     exceptionId: { type: Schema.Types.ObjectId, ref: 'AttendanceException' },
+
+    returnStatus: { type: String, enum: RETURN_STATUSES, default: 'not_marked', index: true },
+    actualReturnDateKey: { type: String },
+    returnMarkedAt: { type: Date },
+    returnReviewedById: { type: Schema.Types.ObjectId, ref: 'User' },
+    returnReviewedByName: { type: String, trim: true, maxlength: 120 },
+    returnReviewedAt: { type: Date },
+    returnReviewNote: { type: String, trim: true, maxlength: 600 },
+    daysRefunded: { type: Number },
   },
   { timestamps: true }
 );

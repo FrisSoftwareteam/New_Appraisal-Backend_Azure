@@ -19,6 +19,8 @@ router.put('/pending/:id', auth_middleware_1.authenticate, (0, auth_middleware_1
 router.delete('/pending/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.deletePendingStaff);
 // Bulk actions
 router.delete('/all', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.deleteAllStaff);
+// Change a staff member's notch (distinct, audited HR action)
+router.patch('/:id/notch', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageSalarySettings'), staff_controller_1.updateStaffNotch);
 // Update staff member
 router.patch('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.updateStaff);
 // Delete staff member
@@ -27,6 +29,8 @@ router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requ
 router.post('/:id/exclude', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), staff_controller_1.excludeFromCycle);
 // Import staff from Excel
 router.post('/import', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageUsers'), upload.single('file'), staff_controller_1.importStaff);
+// Bulk seed notch + initial leave-balance carryover for existing staff
+router.post('/bulk-import-salary-data', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageSalarySettings'), upload.single('file'), staff_controller_1.bulkImportSalaryData);
 // Get unique filter options
 router.get('/filters', auth_middleware_1.authenticate, staff_controller_1.getStaffFilters);
 exports.default = router;

@@ -45,11 +45,25 @@ exports.updateRole = updateRole;
 const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
     const defaultRoles = [
         {
+            name: "CEO",
+            slug: "ceo",
+            accessLevel: 12,
+            description: "Chief Executive Officer access",
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: false }
+        },
+        {
+            name: "Head of Corporate Services",
+            slug: "head_of_corporate_services",
+            accessLevel: 11,
+            description: "Head of Corporate Services access",
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: false }
+        },
+        {
             name: "Super Admin",
             slug: "super_admin",
             accessLevel: 10,
             description: "Full system access",
-            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: true }
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: true, manageSalarySettings: true }
         },
         {
             name: "COO",
@@ -70,7 +84,7 @@ const seedRoles = () => __awaiter(void 0, void 0, void 0, function* () {
             slug: "hr_admin",
             accessLevel: 7,
             description: "HR management access",
-            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
+            permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: true }
         },
         {
             name: "Division Head",

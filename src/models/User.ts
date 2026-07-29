@@ -11,7 +11,9 @@ export type UserRole =
   | "coo"
   | "appraisal_committee"
   | "employee"
-  | "guest";
+  | "guest"
+  | "head_of_corporate_services"
+  | "ceo";
 
 export interface IUser extends Document {
   email: string;
@@ -24,6 +26,7 @@ export interface IUser extends Document {
   division: string;
   unit?: string;
   grade: string;
+  notch?: number;
   jobTitle?: string;
   designation?: string;
   gender?: string;
@@ -65,7 +68,9 @@ const UserSchema: Schema = new Schema({
       "coo",
       "appraisal_committee",
       "employee",
-      "guest"
+      "guest",
+      "head_of_corporate_services",
+      "ceo"
     ],
     default: "employee"
   },
@@ -74,6 +79,7 @@ const UserSchema: Schema = new Schema({
   division: { type: String, required: true },
   unit: { type: String },
   grade: { type: String, required: true },
+  notch: { type: Number, min: 1, max: 20 },
   jobTitle: { type: String },
   designation: { type: String },
   gender: { type: String },
@@ -102,5 +108,11 @@ const UserSchema: Schema = new Schema({
 }, { timestamps: true });
 
 UserSchema.index({ role: 1 });
+// Backs getAllStaff's department/division/grade filters.
+UserSchema.index({ department: 1 });
+UserSchema.index({ division: 1 });
+UserSchema.index({ grade: 1 });
+// Backs the leave-balances list sort.
+UserSchema.index({ lastName: 1, firstName: 1 });
 
 export default mongoose.model<IUser>('User', UserSchema);
