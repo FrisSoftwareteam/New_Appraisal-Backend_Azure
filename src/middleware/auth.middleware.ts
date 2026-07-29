@@ -41,6 +41,11 @@ export const authorize = (roles: string[]) => {
 };
 
 import Role from '../models/Role';
+import { createTtlCache } from '../utils/ttl-cache';
+
+// Roles change rarely; caching avoids a DB round trip on every permission-gated
+// request (this middleware runs on most protected routes).
+const getCachedRoles = createTtlCache(() => Role.find(), 60_000);
 
 export const requirePermission = (permission: string) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -54,8 +59,9 @@ export const requirePermission = (permission: string) => {
         return next();
       }
 
-      const role = await Role.findOne({ slug: req.user.role });
-      
+      const roles = await getCachedRoles();
+      const role = roles.find((r) => r.slug === req.user!.role) ?? null;
+
       if (!role) {
         return res.status(403).send({ error: 'Role not found.' });
       }

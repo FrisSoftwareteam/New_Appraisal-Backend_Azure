@@ -46,8 +46,13 @@ const authorize = (roles) => {
 };
 exports.authorize = authorize;
 const Role_1 = __importDefault(require("../models/Role"));
+const ttl_cache_1 = require("../utils/ttl-cache");
+// Roles change rarely; caching avoids a DB round trip on every permission-gated
+// request (this middleware runs on most protected routes).
+const getCachedRoles = (0, ttl_cache_1.createTtlCache)(() => Role_1.default.find(), 60000);
 const requirePermission = (permission) => {
     return (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
         try {
             if (!req.user) {
                 return res.status(401).send({ error: 'Please authenticate.' });
@@ -56,7 +61,8 @@ const requirePermission = (permission) => {
             if (req.user.role === 'super_admin') {
                 return next();
             }
-            const role = yield Role_1.default.findOne({ slug: req.user.role });
+            const roles = yield getCachedRoles();
+            const role = (_a = roles.find((r) => r.slug === req.user.role)) !== null && _a !== void 0 ? _a : null;
             if (!role) {
                 return res.status(403).send({ error: 'Role not found.' });
             }

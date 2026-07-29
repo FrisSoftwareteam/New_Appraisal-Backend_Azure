@@ -15,6 +15,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import LeaveRequest from '../models/LeaveRequest';
 import {
   getExceptionMapForUsersOnDate,
+  listAttendanceExceptionsInRange,
   serializeAttendanceException
 } from '../services/attendance-exception.service';
 import {
@@ -1169,6 +1170,39 @@ export const updateAttendanceCaptureControlForAdmin = async (req: AuthRequest, r
   } catch (error) {
     console.error('Error updating attendance capture control:', error);
     return res.status(500).json({ message: 'Error updating attendance capture control', error });
+  }
+};
+
+/**
+ * Company-wide approved public holidays in a date range. Any authenticated user can
+ * call this (not admin-gated) — it's just calendar info, used by the leave
+ * application form to preview which selected days won't be charged.
+ */
+export const getPublicHolidaysInRange = async (req: AuthRequest, res: Response) => {
+  try {
+    const startDate = typeof req.query.start === 'string' ? req.query.start.trim() : '';
+    const endDate = typeof req.query.end === 'string' ? req.query.end.trim() : '';
+
+    if (!isValidDateKey(startDate) || !isValidDateKey(endDate)) {
+      return res.status(400).json({ message: 'start and end must be valid YYYY-MM-DD dates.' });
+    }
+    if (startDate > endDate) {
+      return res.status(400).json({ message: 'start must be on or before end.' });
+    }
+
+    const exceptions = await listAttendanceExceptionsInRange(startDate, endDate, {
+      scope: 'company',
+      statuses: ['approved']
+    });
+
+    const holidays = exceptions
+      .filter((exception) => exception.type === 'public_holiday')
+      .map(serializeAttendanceException);
+
+    res.json({ items: holidays });
+  } catch (error) {
+    console.error('Error fetching public holidays:', error);
+    res.status(500).json({ message: 'Error fetching public holidays' });
   }
 };
 

@@ -213,6 +213,38 @@ export async function getExcusedWeekdayDateKeysForUserInRange(
   return dateKeys;
 }
 
+export async function getPublicHolidayDateKeysInRange(
+  startDateKey: string,
+  endDateKey: string
+) {
+  if (!isValidDateKey(startDateKey) || !isValidDateKey(endDateKey)) {
+    return new Set<string>();
+  }
+
+  if (startDateKey > endDateKey) {
+    return new Set<string>();
+  }
+
+  const exceptions = await listAttendanceExceptionsInRange(startDateKey, endDateKey, {
+    scope: 'company',
+    statuses: ['approved']
+  });
+  const dateKeys = new Set<string>();
+
+  exceptions
+    .filter((exception) => exception.type === 'public_holiday')
+    .forEach((exception) => {
+      const start = exception.startDateKey > startDateKey ? exception.startDateKey : startDateKey;
+      const end = exception.endDateKey < endDateKey ? exception.endDateKey : endDateKey;
+
+      expandDateKeys(start, end).forEach((dateKey) => {
+        dateKeys.add(dateKey);
+      });
+    });
+
+  return dateKeys;
+}
+
 export function countDateKeysInRange(dateKeys: Set<string>, startDateKey: string, endDateKey: string) {
   let count = 0;
   dateKeys.forEach((key) => {

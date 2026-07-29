@@ -566,7 +566,9 @@ export const getPendingAppraisals = async (req: AuthRequest, res: Response) => {
 // Get All Appraisals (Admin/HR)
 export const getAllAppraisals = async (req: Request, res: Response) => {
   try {
-    const appraisals = await Appraisal.find()
+    const { employeeId } = req.query;
+    const filter = employeeId ? { employee: employeeId } : {};
+    const appraisals = await Appraisal.find(filter)
       .populate('employee', 'firstName lastName email department')
       .populate('template', 'name')
       .populate('workflow')

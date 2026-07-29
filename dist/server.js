@@ -39,6 +39,13 @@ const appraisal_admin_edit_routes_1 = __importDefault(require("./routes/appraisa
 const attendance_routes_1 = __importDefault(require("./routes/attendance.routes"));
 const training_routes_1 = __importDefault(require("./routes/training.routes"));
 const leaveRequest_routes_1 = __importDefault(require("./routes/leaveRequest.routes"));
+const grade_routes_1 = __importDefault(require("./routes/grade.routes"));
+const leaveBalance_routes_1 = __importDefault(require("./routes/leaveBalance.routes"));
+const department_routes_1 = __importDefault(require("./routes/department.routes"));
+const division_routes_1 = __importDefault(require("./routes/division.routes"));
+const unit_routes_1 = __importDefault(require("./routes/unit.routes"));
+const jobRole_routes_1 = __importDefault(require("./routes/jobRole.routes"));
+const achievement_routes_1 = __importDefault(require("./routes/achievement.routes"));
 const error_middleware_1 = require("./middleware/error.middleware");
 const cloudinary_1 = require("./config/cloudinary");
 const cloudinaryConfigured = (0, cloudinary_1.configureCloudinary)();
@@ -76,6 +83,13 @@ app.use('/api/reports', report_routes_1.default);
 app.use('/api/attendance', attendance_routes_1.default);
 app.use('/api/training', training_routes_1.default);
 app.use('/api/leave-requests', leaveRequest_routes_1.default);
+app.use('/api/grades', grade_routes_1.default);
+app.use('/api/leave-balances', leaveBalance_routes_1.default);
+app.use('/api/departments', department_routes_1.default);
+app.use('/api/divisions', division_routes_1.default);
+app.use('/api/units', unit_routes_1.default);
+app.use('/api/job-roles', jobRole_routes_1.default);
+app.use('/api/achievements', achievement_routes_1.default);
 app.get('/', (req, res) => {
     res.json({ message: 'HR Appraisal System API is running' });
 });

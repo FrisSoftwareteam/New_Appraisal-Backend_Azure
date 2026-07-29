@@ -10,6 +10,8 @@
     "lint": "eslint src/**/*.ts",
     "seed": "ts-node src/utils/seed.ts",
     "seed:appraisal": "ts-node scripts/seed-appraisal.ts",
+    "migrate:salary-permission": "ts-node src/scripts/add-manage-salary-settings-permission.ts",
+    "seed:org-taxonomy": "ts-node src/scripts/seed-org-taxonomy.ts",
     "vercel-build": "npm run build"
   },
   "keywords": [],

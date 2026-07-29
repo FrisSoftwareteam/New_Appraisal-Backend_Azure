@@ -45,14 +45,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getStaffStats = exports.deleteAllStaff = exports.deletePendingStaff = exports.resolvePendingStaff = exports.getPendingStaff = exports.importStaff = exports.getStaffFilters = exports.excludeFromCycle = exports.deleteStaff = exports.updateStaff = exports.getAllStaff = void 0;
+exports.bulkImportSalaryData = exports.updateStaffNotch = exports.getStaffStats = exports.deleteAllStaff = exports.deletePendingStaff = exports.resolvePendingStaff = exports.getPendingStaff = exports.importStaff = exports.getStaffFilters = exports.excludeFromCycle = exports.deleteStaff = exports.updateStaff = exports.getAllStaff = void 0;
 const xlsx = __importStar(require("xlsx"));
 const User_1 = __importDefault(require("../models/User"));
+const Grade_1 = __importDefault(require("../models/Grade"));
 const PendingStaff_1 = __importDefault(require("../models/PendingStaff"));
 const Appraisal_1 = __importDefault(require("../models/Appraisal"));
 const AppraisalPeriod_1 = __importDefault(require("../models/AppraisalPeriod"));
 const period_utils_1 = require("../utils/period-utils");
 const AppraisalTemplate_1 = __importDefault(require("../models/AppraisalTemplate"));
+const LeaveBalance_1 = __importDefault(require("../models/LeaveBalance"));
+const audit_controller_1 = require("./audit.controller");
 // Get all staff with optional filtering
 const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -84,17 +87,27 @@ const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             query.role = req.query.role;
         }
         const staff = yield User_1.default.find(query).select('-password').lean();
-        // Fetch latest appraisals for these staff members
+        // Fetch latest appraisal per staff member. Doing the "latest per employee"
+        // reduction in Mongo (rather than pulling every historical appraisal - full
+        // nested reviews/history/adminEditedVersion documents - and reducing in JS)
+        // avoids transferring the entire appraisal history for every listed employee
+        // just to read two response strings off the newest one.
         const staffIds = staff.map(s => s._id);
-        const latestAppraisals = yield Appraisal_1.default.find({
-            employee: { $in: staffIds }
-        }).sort({ createdAt: -1 }).lean();
-        // Map appraisals to staff for quick lookup (latest one first per employee)
+        const latestAppraisals = yield Appraisal_1.default.aggregate([
+            { $match: { employee: { $in: staffIds } } },
+            { $sort: { employee: 1, createdAt: -1 } },
+            {
+                $group: {
+                    _id: '$employee',
+                    reviews: { $first: '$reviews' },
+                    adminEditedVersion: { $first: '$adminEditedVersion' },
+                },
+            },
+        ]);
+        // Map appraisals to staff for quick lookup
         const appraisalMap = new Map();
         latestAppraisals.forEach(app => {
-            if (!appraisalMap.has(String(app.employee))) {
-                appraisalMap.set(String(app.employee), app);
-            }
+            appraisalMap.set(String(app._id), app);
         });
         const staffWithTraining = staff.map((member) => {
             var _a;
@@ -197,7 +210,11 @@ const getStaffFilters = (req, res) => __awaiter(void 0, void 0, void 0, function
     try {
         const departments = yield User_1.default.distinct('department');
         const divisions = yield User_1.default.distinct('division');
-        const grades = yield User_1.default.distinct('grade');
+        const [staffGrades, configuredGradeNames] = yield Promise.all([
+            User_1.default.distinct('grade'),
+            Grade_1.default.distinct('name', { isActive: true }),
+        ]);
+        const grades = Array.from(new Set([...staffGrades, ...configuredGradeNames]));
         res.status(200).json({
             departments: departments.filter(Boolean).sort(),
             divisions: divisions.filter(Boolean).sort(),
@@ -628,3 +645,124 @@ const getStaffStats = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 });
 exports.getStaffStats = getStaffStats;
+// Change a single staff member's notch — kept separate from the general updateStaff
+// endpoint so it's a distinct, audited HR action rather than folded into profile edits.
+const updateStaffNotch = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { id } = req.params;
+        const { notch } = req.body;
+        if (typeof notch !== 'number' || !Number.isInteger(notch) || notch < 1 || notch > 20) {
+            return res.status(400).json({ message: 'notch must be an integer between 1 and 20' });
+        }
+        const user = yield User_1.default.findById(id);
+        if (!user) {
+            return res.status(404).json({ message: 'Staff member not found' });
+        }
+        const previousNotch = (_a = user.notch) !== null && _a !== void 0 ? _a : null;
+        user.notch = notch;
+        yield user.save();
+        yield (0, audit_controller_1.createAuditLog)(req.user._id.toString(), 'update', 'UserNotch', id, `Changed notch for ${user.firstName} ${user.lastName} from ${previousNotch !== null && previousNotch !== void 0 ? previousNotch : 'unset'} to ${notch}`, { notch: { old: previousNotch, new: notch } });
+        res.status(200).json({ message: 'Notch updated successfully', notch: user.notch });
+    }
+    catch (error) {
+        console.error('Error updating staff notch:', error);
+        res.status(500).json({ message: 'Error updating staff notch' });
+    }
+});
+exports.updateStaffNotch = updateStaffNotch;
+// One-time bulk seed of notch + initial leave-balance carryover for existing staff.
+// Mirrors the xlsx-parse-by-email-match shape of bulkUpdateUsers/importStaff above.
+const bulkImportSalaryData = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'Please upload an Excel file' });
+        }
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+        let sheetName = workbook.SheetNames[0];
+        let data = [];
+        for (const name of workbook.SheetNames) {
+            const sheet = workbook.Sheets[name];
+            const rows = xlsx.utils.sheet_to_json(sheet);
+            if (rows.length > 0) {
+                sheetName = name;
+                data = rows;
+                break;
+            }
+        }
+        console.log(`[BulkImportSalaryData] Using sheet: "${sheetName}" with ${data.length} rows`);
+        const results = {
+            success: 0,
+            failed: 0,
+            errors: [],
+        };
+        const currentYear = new Date().getFullYear();
+        for (const row of data) {
+            const rowKeys = Object.keys(row);
+            const findKey = (matcher) => rowKeys.find((k) => matcher(k.toLowerCase().replace(/[^a-z]/g, '')));
+            const emailKey = findKey((k) => k === 'email' || k === 'emailaddress');
+            const email = emailKey ? row[emailKey] : null;
+            if (!email) {
+                results.failed++;
+                results.errors.push({ email: 'Unknown', reason: 'Missing email in row' });
+                continue;
+            }
+            try {
+                const user = yield User_1.default.findOne({ email: String(email).toLowerCase().trim() });
+                if (!user) {
+                    results.failed++;
+                    results.errors.push({ email, reason: 'User not found' });
+                    continue;
+                }
+                const notchKey = findKey((k) => k === 'notch');
+                const daysKey = findKey((k) => k.includes('leavedays') && k.includes('carryover'));
+                const allowanceKey = findKey((k) => k.includes('allowance') && k.includes('carryover'));
+                const yearKey = findKey((k) => k === 'leaveyear' || k === 'year');
+                const notchRaw = notchKey ? row[notchKey] : undefined;
+                if (notchRaw === undefined || notchRaw === null || notchRaw === '') {
+                    results.failed++;
+                    results.errors.push({ email, reason: 'Missing notch value' });
+                    continue;
+                }
+                const notch = parseInt(String(notchRaw), 10);
+                if (!Number.isInteger(notch) || notch < 1 || notch > 20) {
+                    results.failed++;
+                    results.errors.push({ email, reason: `Invalid notch value: ${notchRaw}` });
+                    continue;
+                }
+                const yearRaw = yearKey ? row[yearKey] : undefined;
+                const leaveYear = yearRaw ? parseInt(String(yearRaw), 10) : currentYear;
+                const daysRaw = daysKey ? row[daysKey] : undefined;
+                const allowanceRaw = allowanceKey ? row[allowanceKey] : undefined;
+                const initialLeaveDaysCarryover = daysRaw !== undefined && daysRaw !== '' ? parseFloat(String(daysRaw)) : 0;
+                const initialAllowanceCarryover = allowanceRaw !== undefined && allowanceRaw !== '' ? parseFloat(String(allowanceRaw)) : 0;
+                user.notch = notch;
+                yield user.save();
+                const existingBalance = yield LeaveBalance_1.default.findOne({ userId: user._id, leaveYear });
+                if (existingBalance && (existingBalance.daysUsed > 0 || existingBalance.allowanceClaimed > 0)) {
+                    // Balance is already in use this year — leave it alone, notch is still updated above.
+                    results.success++;
+                    continue;
+                }
+                yield LeaveBalance_1.default.findOneAndUpdate({ userId: user._id, leaveYear }, {
+                    $set: {
+                        openingCarryoverDays: initialLeaveDaysCarryover,
+                        openingCarryoverAllowance: initialAllowanceCarryover,
+                    },
+                    $setOnInsert: { daysUsed: 0, allowanceClaimed: 0, allowanceClaimHistory: [] },
+                }, { upsert: true });
+                results.success++;
+            }
+            catch (error) {
+                results.failed++;
+                results.errors.push({ email, reason: error.message || 'Update failed' });
+            }
+        }
+        res.json(results);
+    }
+    catch (error) {
+        console.error('Bulk salary data import error:', error);
+        res.status(500).json({ message: 'Failed to process bulk salary data import' });
+    }
+});
+exports.bulkImportSalaryData = bulkImportSalaryData;

@@ -1,12 +1,15 @@
 import { Request, Response } from 'express';
 import * as xlsx from 'xlsx';
 import User, { UserRole } from '../models/User';
+import Grade from '../models/Grade';
 import PendingStaff from '../models/PendingStaff';
 import Appraisal from '../models/Appraisal';
 import AppraisalPeriod from '../models/AppraisalPeriod';
 import { getNonElapsedActivePeriodFilter } from '../utils/period-utils';
 import AppraisalTemplate from '../models/AppraisalTemplate';
+import LeaveBalance from '../models/LeaveBalance';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { createAuditLog } from './audit.controller';
 
 // Get all staff with optional filtering
 export const getAllStaff = async (req: Request, res: Response) => {
@@ -46,19 +49,29 @@ export const getAllStaff = async (req: Request, res: Response) => {
     }
     
     const staff = await User.find(query).select('-password').lean();
-    
-    // Fetch latest appraisals for these staff members
-    const staffIds = staff.map(s => s._id);
-    const latestAppraisals = await Appraisal.find({
-      employee: { $in: staffIds }
-    }).sort({ createdAt: -1 }).lean();
 
-    // Map appraisals to staff for quick lookup (latest one first per employee)
+    // Fetch latest appraisal per staff member. Doing the "latest per employee"
+    // reduction in Mongo (rather than pulling every historical appraisal - full
+    // nested reviews/history/adminEditedVersion documents - and reducing in JS)
+    // avoids transferring the entire appraisal history for every listed employee
+    // just to read two response strings off the newest one.
+    const staffIds = staff.map(s => s._id);
+    const latestAppraisals = await Appraisal.aggregate([
+      { $match: { employee: { $in: staffIds } } },
+      { $sort: { employee: 1, createdAt: -1 } },
+      {
+        $group: {
+          _id: '$employee',
+          reviews: { $first: '$reviews' },
+          adminEditedVersion: { $first: '$adminEditedVersion' },
+        },
+      },
+    ]);
+
+    // Map appraisals to staff for quick lookup
     const appraisalMap = new Map();
     latestAppraisals.forEach(app => {
-      if (!appraisalMap.has(String(app.employee))) {
-        appraisalMap.set(String(app.employee), app);
-      }
+      appraisalMap.set(String(app._id), app);
     });
 
     const staffWithTraining = staff.map((member: any) => {
@@ -178,8 +191,12 @@ export const getStaffFilters = async (req: Request, res: Response) => {
   try {
     const departments = await User.distinct('department');
     const divisions = await User.distinct('division');
-    const grades = await User.distinct('grade');
-    
+    const [staffGrades, configuredGradeNames] = await Promise.all([
+      User.distinct('grade'),
+      Grade.distinct('name', { isActive: true }),
+    ]);
+    const grades = Array.from(new Set([...staffGrades, ...configuredGradeNames]));
+
     res.status(200).json({
       departments: departments.filter(Boolean).sort(),
       divisions: divisions.filter(Boolean).sort(),
@@ -611,5 +628,158 @@ export const getStaffStats = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching staff stats:', error);
     res.status(500).json({ message: 'Error fetching staff stats', error });
+  }
+};
+
+// Change a single staff member's notch — kept separate from the general updateStaff
+// endpoint so it's a distinct, audited HR action rather than folded into profile edits.
+export const updateStaffNotch = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notch } = req.body;
+
+    if (typeof notch !== 'number' || !Number.isInteger(notch) || notch < 1 || notch > 20) {
+      return res.status(400).json({ message: 'notch must be an integer between 1 and 20' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
+    const previousNotch = user.notch ?? null;
+    user.notch = notch;
+    await user.save();
+
+    await createAuditLog(
+      req.user!._id.toString(),
+      'update',
+      'UserNotch',
+      id,
+      `Changed notch for ${user.firstName} ${user.lastName} from ${previousNotch ?? 'unset'} to ${notch}`,
+      { notch: { old: previousNotch, new: notch } }
+    );
+
+    res.status(200).json({ message: 'Notch updated successfully', notch: user.notch });
+  } catch (error) {
+    console.error('Error updating staff notch:', error);
+    res.status(500).json({ message: 'Error updating staff notch' });
+  }
+};
+
+// One-time bulk seed of notch + initial leave-balance carryover for existing staff.
+// Mirrors the xlsx-parse-by-email-match shape of bulkUpdateUsers/importStaff above.
+export const bulkImportSalaryData = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Please upload an Excel file' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+
+    let sheetName = workbook.SheetNames[0];
+    let data: any[] = [];
+    for (const name of workbook.SheetNames) {
+      const sheet = workbook.Sheets[name];
+      const rows = xlsx.utils.sheet_to_json(sheet);
+      if (rows.length > 0) {
+        sheetName = name;
+        data = rows;
+        break;
+      }
+    }
+    console.log(`[BulkImportSalaryData] Using sheet: "${sheetName}" with ${data.length} rows`);
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as { email: string; reason: string }[],
+    };
+
+    const currentYear = new Date().getFullYear();
+
+    for (const row of data as any[]) {
+      const rowKeys = Object.keys(row);
+      const findKey = (matcher: (cleanKey: string) => boolean) =>
+        rowKeys.find((k) => matcher(k.toLowerCase().replace(/[^a-z]/g, '')));
+
+      const emailKey = findKey((k) => k === 'email' || k === 'emailaddress');
+      const email = emailKey ? row[emailKey] : null;
+
+      if (!email) {
+        results.failed++;
+        results.errors.push({ email: 'Unknown', reason: 'Missing email in row' });
+        continue;
+      }
+
+      try {
+        const user = await User.findOne({ email: String(email).toLowerCase().trim() });
+        if (!user) {
+          results.failed++;
+          results.errors.push({ email, reason: 'User not found' });
+          continue;
+        }
+
+        const notchKey = findKey((k) => k === 'notch');
+        const daysKey = findKey((k) => k.includes('leavedays') && k.includes('carryover'));
+        const allowanceKey = findKey((k) => k.includes('allowance') && k.includes('carryover'));
+        const yearKey = findKey((k) => k === 'leaveyear' || k === 'year');
+
+        const notchRaw = notchKey ? row[notchKey] : undefined;
+        if (notchRaw === undefined || notchRaw === null || notchRaw === '') {
+          results.failed++;
+          results.errors.push({ email, reason: 'Missing notch value' });
+          continue;
+        }
+
+        const notch = parseInt(String(notchRaw), 10);
+        if (!Number.isInteger(notch) || notch < 1 || notch > 20) {
+          results.failed++;
+          results.errors.push({ email, reason: `Invalid notch value: ${notchRaw}` });
+          continue;
+        }
+
+        const yearRaw = yearKey ? row[yearKey] : undefined;
+        const leaveYear = yearRaw ? parseInt(String(yearRaw), 10) : currentYear;
+
+        const daysRaw = daysKey ? row[daysKey] : undefined;
+        const allowanceRaw = allowanceKey ? row[allowanceKey] : undefined;
+        const initialLeaveDaysCarryover = daysRaw !== undefined && daysRaw !== '' ? parseFloat(String(daysRaw)) : 0;
+        const initialAllowanceCarryover =
+          allowanceRaw !== undefined && allowanceRaw !== '' ? parseFloat(String(allowanceRaw)) : 0;
+
+        user.notch = notch;
+        await user.save();
+
+        const existingBalance = await LeaveBalance.findOne({ userId: user._id, leaveYear });
+        if (existingBalance && (existingBalance.daysUsed > 0 || existingBalance.allowanceClaimed > 0)) {
+          // Balance is already in use this year — leave it alone, notch is still updated above.
+          results.success++;
+          continue;
+        }
+
+        await LeaveBalance.findOneAndUpdate(
+          { userId: user._id, leaveYear },
+          {
+            $set: {
+              openingCarryoverDays: initialLeaveDaysCarryover,
+              openingCarryoverAllowance: initialAllowanceCarryover,
+            },
+            $setOnInsert: { daysUsed: 0, allowanceClaimed: 0, allowanceClaimHistory: [] },
+          },
+          { upsert: true }
+        );
+
+        results.success++;
+      } catch (error: any) {
+        results.failed++;
+        results.errors.push({ email, reason: error.message || 'Update failed' });
+      }
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('Bulk salary data import error:', error);
+    res.status(500).json({ message: 'Failed to process bulk salary data import' });
   }
 };

@@ -23,6 +23,7 @@ import {
   getMyTodayAttendance,
   getTodayAttendanceByUserId,
   getNetworkLocationByIp,
+  getPublicHolidaysInRange,
   reviewAttendanceExceptionRequestForAdmin,
   updateAttendanceEntryFlagForAdmin,
   uploadAttendancePhoto,
@@ -49,6 +50,7 @@ router.post('/me/exceptions', authenticate, createMyAttendanceExceptionRequest);
 router.post('/uploads/photo', authenticate, uploadAttendancePhoto);
 router.post('/uploads/photo/public', uploadAttendancePhotoPublic);
 router.get('/location/ip', authenticate, getNetworkLocationByIp);
+router.get('/holidays', authenticate, getPublicHolidaysInRange);
 
 router.get('/admin/daily', authenticate, getDailyAttendanceForAdmin);
 router.put('/admin/entry/:id/flag', authenticate, updateAttendanceEntryFlagForAdmin);

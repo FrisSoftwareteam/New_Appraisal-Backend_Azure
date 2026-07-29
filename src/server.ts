@@ -28,6 +28,13 @@ import appraisalAdminEditRoutes from './routes/appraisal-admin-edit.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import trainingRoutes from './routes/training.routes';
 import leaveRequestRoutes from './routes/leaveRequest.routes';
+import gradeRoutes from './routes/grade.routes';
+import leaveBalanceRoutes from './routes/leaveBalance.routes';
+import departmentRoutes from './routes/department.routes';
+import divisionRoutes from './routes/division.routes';
+import unitRoutes from './routes/unit.routes';
+import jobRoleRoutes from './routes/jobRole.routes';
+import achievementRoutes from './routes/achievement.routes';
 import { errorHandler, checkDatabaseConnection } from './middleware/error.middleware';
 import { configureCloudinary } from './config/cloudinary';
 
@@ -69,6 +76,13 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/leave-requests', leaveRequestRoutes);
+app.use('/api/grades', gradeRoutes);
+app.use('/api/leave-balances', leaveBalanceRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/divisions', divisionRoutes);
+app.use('/api/units', unitRoutes);
+app.use('/api/job-roles', jobRoleRoutes);
+app.use('/api/achievements', achievementRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'HR Appraisal System API is running' });

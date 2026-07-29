@@ -132,4 +132,6 @@ AppraisalSchema.index({ period: 1, employee: 1, createdAt: -1 });
 // Dashboard-heavy query paths.
 AppraisalSchema.index({ status: 1, updatedAt: -1 });
 AppraisalSchema.index({ employee: 1, status: 1, updatedAt: -1 });
+// Backs the staff-list "latest appraisal per employee" aggregation.
+AppraisalSchema.index({ employee: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model('Appraisal', AppraisalSchema);

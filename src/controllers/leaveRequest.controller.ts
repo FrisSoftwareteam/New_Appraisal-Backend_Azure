@@ -8,9 +8,20 @@ import {
   notifyLeaveApprovalNeeded,
   notifyLeaveStepApproved,
   notifyLeaveRejected,
+  notifyReturnFromLeaveSubmitted,
+  notifyReturnFromLeaveReviewed,
 } from '../services/email.service';
+import { applyLeaveApprovalToBalance, refundLeaveDaysForEarlyReturn } from '../services/salary.service';
+import { createNotification } from './notification.controller';
+import { isValidDateKey } from '../utils/attendance-metrics';
+import { getTodayDateKey } from '../services/attendance.service';
 
 const HR_ROLES = ['hr_admin', 'super_admin'];
+
+function resolvesAutoStep(approverRole: string | null | undefined, userRole: string): boolean {
+  const role = approverRole ?? 'hr_admin'; // pre-migration docs predate this field and always meant HR
+  return role === 'hr_admin' ? HR_ROLES.includes(userRole) : userRole === role;
+}
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   annual_leave: 'Annual Leave',
@@ -23,6 +34,7 @@ const LEAVE_TYPE_LABELS: Record<string, string> = {
 
 interface ApprovalChainInput {
   reliefOfficerId?: string;
+  supervisorId?: string;
   deptHeadId?: string;
   divisionHeadId?: string;
   groupHeadId?: string;
@@ -31,6 +43,7 @@ interface ApprovalChainInput {
  async function buildApprovalChain(leaveType: LeaveType, data: ApprovalChainInput) {
   const userIds = [
     data.reliefOfficerId,
+    data.supervisorId,
     data.deptHeadId,
     data.divisionHeadId,
     data.groupHeadId,
@@ -49,14 +62,16 @@ interface ApprovalChainInput {
     return userMap.get(id) || 'Unknown';
   };
 
-  const step = (label: string, id: string | null) => ({
-    label, approverId: id, approverName: id ? getName(id) : 'HR Admin', status: 'pending' as const,
+  const step = (label: string, id: string | null, approverRole: string | null = null) => ({
+    label, approverId: id, approverName: id ? getName(id) : label, approverRole: id ? null : approverRole, status: 'pending' as const,
   });
 
-  const hrStep = step('HR Admin', null);
+  const hrStep = step('HR Admin', null, 'hr_admin');
+  const hocsStep = step('Head of Corporate Services', null, 'head_of_corporate_services');
+  const ceoStep = step('CEO', null, 'ceo');
 
   if (leaveType === 'leave_of_absence') {
-    return [hrStep];
+    return [hrStep, hocsStep, ceoStep];
   }
 
   if (!data.reliefOfficerId) {
@@ -66,19 +81,21 @@ interface ApprovalChainInput {
   const steps = [step('Relief Officer', data.reliefOfficerId)];
 
   if (leaveType === 'annual_leave') {
+    if (data.supervisorId)   steps.push(step('Supervisor', data.supervisorId));
     if (data.deptHeadId)     steps.push(step('Head of Department', data.deptHeadId));
     if (data.divisionHeadId) steps.push(step('Head of Division', data.divisionHeadId));
     if (data.groupHeadId)    steps.push(step('Group Head', data.groupHeadId));
-    steps.push(hrStep);
+    steps.push(hrStep, hocsStep, ceoStep);
     return steps;
   }
 
   // All other leave types: Casual, Compassionate, Maternity, Exam
+  if (data.supervisorId) steps.push(step('Supervisor', data.supervisorId));
   if (!data.deptHeadId) {
     throw new Error('This leave type requires a Department Head');
   }
   steps.push(step('Head of Department', data.deptHeadId));
-  steps.push(hrStep);
+  steps.push(hrStep, hocsStep, ceoStep);
 
   return steps;
 }
@@ -93,6 +110,7 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
       reason,
       leaveAllowance,
       reliefOfficerId,
+      supervisorId,
       deptHeadId,
       divisionHeadId,
       groupHeadId,
@@ -123,6 +141,7 @@ export const createLeaveRequest = async (req: AuthRequest, res: Response) => {
 
     const approvalSteps = await buildApprovalChain(leaveType, {
       reliefOfficerId,
+      supervisorId,
       deptHeadId,
       divisionHeadId,
       groupHeadId,
@@ -204,7 +223,6 @@ export const cancelLeaveRequest = async (req: AuthRequest, res: Response) => {
 export const getMyPendingApprovals = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!._id.toString();
-    const isHr = HR_ROLES.includes(req.user!.role);
 
     const query: any = { status: 'pending' };
 
@@ -215,7 +233,7 @@ export const getMyPendingApprovals = async (req: AuthRequest, res: Response) => 
       if (!step || step.status !== 'pending') return false;
 
       if (step.approverId === null) {
-        return isHr;
+        return resolvesAutoStep(step.approverRole, req.user!.role);
       }
       return step.approverId?.toString() === userId;
     });
@@ -245,8 +263,9 @@ export const actOnLeaveRequest = async (req: AuthRequest, res: Response) => {
     }
 
     const userId = req.user!._id.toString();
-    const isHr = HR_ROLES.includes(req.user!.role);
-    const isAssigned = step.approverId === null ? isHr : step.approverId?.toString() === userId;
+    const isAssigned = step.approverId === null
+      ? resolvesAutoStep(step.approverRole, req.user!.role)
+      : step.approverId?.toString() === userId;
 
     if (!isAssigned) {
       return res.status(403).json({ message: 'You are not the assigned approver for this step' });
@@ -299,6 +318,12 @@ export const actOnLeaveRequest = async (req: AuthRequest, res: Response) => {
       });
 
       request.exceptionId = exception._id as any;
+
+      try {
+        await applyLeaveApprovalToBalance(request);
+      } catch (balanceError) {
+        console.error('Error applying leave approval to balance:', balanceError);
+      }
     } else {
       request.currentStep += 1;
     }
@@ -328,11 +353,13 @@ export const actOnLeaveRequest = async (req: AuthRequest, res: Response) => {
           ).catch(() => {});
         }
       } else if (nextStep && nextStep.approverId === null) {
-        const hrAdmins = await User.find({ role: { $in: ['hr_admin', 'super_admin'] } }).select('email firstName lastName').lean();
-        for (const hr of hrAdmins) {
-          if (hr.email) {
+        const role = nextStep.approverRole ?? 'hr_admin';
+        const roleFilter = role === 'hr_admin' ? HR_ROLES : [role];
+        const recipients = await User.find({ role: { $in: roleFilter } }).select('email firstName lastName').lean();
+        for (const recipient of recipients) {
+          if (recipient.email) {
             notifyLeaveApprovalNeeded(
-              hr.email, `${hr.firstName} ${hr.lastName}`,
+              recipient.email, `${recipient.firstName} ${recipient.lastName}`,
               request.applicantName, request.leaveType, request.startDateKey, request.endDateKey,
               nextStep.label, request.reason,
             ).catch(() => {});
@@ -354,11 +381,12 @@ export const getAllLeaveRequests = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: 'Admin access required' });
     }
 
-    const { status, leaveType, startDate, endDate } = req.query;
+    const { status, leaveType, startDate, endDate, returnStatus } = req.query;
     const query: any = {};
 
     if (status && status !== 'all') query.status = status;
     if (leaveType && leaveType !== 'all') query.leaveType = leaveType;
+    if (returnStatus && returnStatus !== 'all') query.returnStatus = returnStatus;
     if (startDate) query.startDateKey = { $gte: startDate };
     if (endDate) query.endDateKey = { ...query.endDateKey, $lte: endDate };
 
@@ -370,5 +398,134 @@ export const getAllLeaveRequests = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Error fetching all leave requests:', error);
     res.status(500).json({ message: 'Error fetching leave requests' });
+  }
+};
+
+export const markLeaveReturned = async (req: AuthRequest, res: Response) => {
+  try {
+    const { actualReturnDateKey } = req.body;
+    const returnDateKey =
+      typeof actualReturnDateKey === 'string' && actualReturnDateKey.trim()
+        ? actualReturnDateKey.trim()
+        : getTodayDateKey();
+
+    if (!isValidDateKey(returnDateKey)) {
+      return res.status(400).json({ message: 'actualReturnDateKey must be a valid YYYY-MM-DD date' });
+    }
+
+    const request = await LeaveRequest.findOne({
+      _id: req.params.id,
+      applicantId: req.user!._id,
+      status: 'approved',
+      leaveType: 'annual_leave',
+      returnStatus: { $in: ['not_marked', 'rejected'] },
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: 'No eligible approved annual leave request found for this action' });
+    }
+
+    if (returnDateKey < request.startDateKey) {
+      return res.status(400).json({ message: 'Return date cannot be before the leave start date' });
+    }
+
+    request.returnStatus = 'pending_confirmation';
+    request.actualReturnDateKey = returnDateKey;
+    request.returnMarkedAt = new Date();
+    request.returnReviewedById = undefined;
+    request.returnReviewedByName = undefined;
+    request.returnReviewedAt = undefined;
+    request.returnReviewNote = undefined;
+    request.daysRefunded = undefined;
+    await request.save();
+
+    const applicantName = request.applicantName;
+    const hrRecipients = await User.find({ role: { $in: HR_ROLES } }).select('email firstName lastName').lean();
+    for (const hr of hrRecipients) {
+      if (hr.email) {
+        notifyReturnFromLeaveSubmitted(
+          hr.email, `${hr.firstName} ${hr.lastName}`,
+          applicantName, request.startDateKey, request.endDateKey, returnDateKey,
+        ).catch(() => {});
+      }
+      createNotification(
+        String(hr._id),
+        'Return from leave pending confirmation',
+        `${applicantName} marked themselves as returned from leave (claimed ${returnDateKey}).`,
+        'info',
+        '/leave',
+      ).catch(() => {});
+    }
+
+    res.json({ message: 'Return marked, awaiting HR confirmation', request });
+  } catch (error) {
+    console.error('Error marking leave return:', error);
+    res.status(500).json({ message: 'Error marking leave return' });
+  }
+};
+
+export const reviewLeaveReturn = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!HR_ROLES.includes(req.user!.role)) {
+      return res.status(403).json({ message: 'Only HR Admin or Super Admin can review a leave return' });
+    }
+
+    const { decision, reviewNote } = req.body;
+    if (decision !== 'confirmed' && decision !== 'rejected') {
+      return res.status(400).json({ message: 'Decision must be "confirmed" or "rejected"' });
+    }
+
+    const request = await LeaveRequest.findOne({ _id: req.params.id, returnStatus: 'pending_confirmation' });
+    if (!request) {
+      return res.status(404).json({ message: 'No pending return confirmation found for this request' });
+    }
+
+    request.returnStatus = decision;
+    request.returnReviewedById = req.user!._id;
+    request.returnReviewedByName = `${req.user!.firstName} ${req.user!.lastName}`;
+    request.returnReviewedAt = new Date();
+    request.returnReviewNote = typeof reviewNote === 'string' && reviewNote.trim() ? reviewNote.trim() : undefined;
+
+    let daysRefunded = 0;
+    if (decision === 'confirmed' && request.actualReturnDateKey) {
+      try {
+        daysRefunded = await refundLeaveDaysForEarlyReturn(request, request.actualReturnDateKey);
+      } catch (refundError) {
+        console.error('Error refunding early-return leave days:', refundError);
+      }
+      request.daysRefunded = daysRefunded;
+
+      if (daysRefunded > 0 && request.exceptionId) {
+        const lastLeaveDay = new Date(`${request.actualReturnDateKey}T00:00:00.000Z`);
+        lastLeaveDay.setUTCDate(lastLeaveDay.getUTCDate() - 1);
+        const shortenedEndDateKey = lastLeaveDay.toISOString().slice(0, 10);
+        await AttendanceException.findByIdAndUpdate(request.exceptionId, { endDateKey: shortenedEndDateKey });
+      }
+    }
+
+    await request.save();
+
+    const applicant = await User.findById(request.applicantId).select('email firstName lastName').lean();
+    const reviewerName = `${req.user!.firstName} ${req.user!.lastName}`;
+    if (applicant?.email) {
+      notifyReturnFromLeaveReviewed(
+        applicant.email, `${applicant.firstName} ${applicant.lastName}`,
+        decision, reviewerName, request.returnReviewNote, daysRefunded,
+      ).catch(() => {});
+    }
+    createNotification(
+      String(request.applicantId),
+      decision === 'confirmed' ? 'Return from leave confirmed' : 'Return from leave not confirmed',
+      decision === 'confirmed'
+        ? `Your return from leave was confirmed by ${reviewerName}.${daysRefunded > 0 ? ` ${daysRefunded} day(s) credited back to your balance.` : ''}`
+        : `Your return from leave was not confirmed by ${reviewerName}.${request.returnReviewNote ? ` Note: ${request.returnReviewNote}` : ''}`,
+      decision === 'confirmed' ? 'success' : 'warning',
+      '/leave',
+    ).catch(() => {});
+
+    res.json({ message: decision === 'confirmed' ? 'Return confirmed' : 'Return not confirmed', request });
+  } catch (error) {
+    console.error('Error reviewing leave return:', error);
+    res.status(500).json({ message: 'Error reviewing leave return' });
   }
 };
