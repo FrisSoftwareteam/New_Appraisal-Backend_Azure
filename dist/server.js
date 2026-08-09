@@ -103,6 +103,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 const role_controller_1 = require("./controllers/role.controller");
+const attendance_reminder_scheduler_1 = require("./services/attendance-reminder.scheduler");
 // ...
 // Database Connection
 // Database Connection Handling
@@ -164,6 +165,13 @@ mongoose_1.default
     }
     catch (err) {
         console.error('Error seeding roles:', err);
+    }
+    // Must start after the DB is up: the scheduler builds indexes and queries on every tick.
+    try {
+        yield (0, attendance_reminder_scheduler_1.startAttendanceReminderScheduler)();
+    }
+    catch (err) {
+        console.error('Error starting attendance reminder scheduler:', err);
     }
 }))
     .catch((err) => {

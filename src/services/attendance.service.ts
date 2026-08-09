@@ -36,8 +36,9 @@ const DEFAULT_CAPTURE_ENABLED = false;
 export const WEEKENDS_AUTO_PAUSED = parseBooleanEnv(process.env.ATTENDANCE_WEEKENDS_AUTO_PAUSED, true);
 // Deprecated: force-pause is disabled so HR Admin/Super Admin can always start/stop capture.
 const CAPTURE_FORCE_PAUSED = false;
-// Optional: when false, approved exceptions do not pause attendance capture.
-const EXCEPTIONS_AFFECT_CAPTURE = parseBooleanEnv(process.env.ATTENDANCE_EXCEPTIONS_AFFECT_CAPTURE, false);
+// Approved exceptions (including individual leave) pause attendance capture, so
+// staff on leave cannot check in — matching the reminder rules, which skip them.
+const EXCEPTIONS_AFFECT_CAPTURE = parseBooleanEnv(process.env.ATTENDANCE_EXCEPTIONS_AFFECT_CAPTURE, true);
 
 export type AttendanceCapturePauseReason = 'admin_paused' | 'weekend' | 'exception_day' | null;
 

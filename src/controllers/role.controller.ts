@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import Role from '../models/Role';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { DEFAULT_ROLES, PERMISSION_KEYS } from '../constants/role-permissions';
 
 // Get all roles
 export const getRoles = async (req: Request, res: Response) => {
@@ -16,11 +17,27 @@ export const getRoles = async (req: Request, res: Response) => {
 export const updateRole = async (req: AuthRequest, res: Response) => {
   try {
     const { permissions } = req.body;
-    
-    // Prevent updating critical roles if needed, but for now allow all
+
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ message: 'A permissions object is required' });
+    }
+
+    // Only accept known permission keys, and set them field-by-field so a partial
+    // payload can't wipe the keys it omitted.
+    const update: Record<string, boolean> = {};
+    for (const key of PERMISSION_KEYS) {
+      if (key in permissions) {
+        update[`permissions.${key}`] = Boolean(permissions[key]);
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: 'No recognised permission keys provided' });
+    }
+
     const role = await Role.findByIdAndUpdate(
       req.params.id,
-      { permissions },
+      { $set: update },
       { new: true }
     );
 
@@ -36,102 +53,10 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
 
 // Seed default roles (Internal use)
 export const seedRoles = async () => {
-  const defaultRoles = [
-    {
-      name: "CEO",
-      slug: "ceo",
-      accessLevel: 12,
-      description: "Chief Executive Officer access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: false }
-    },
-    {
-      name: "Head of Corporate Services",
-      slug: "head_of_corporate_services",
-      accessLevel: 11,
-      description: "Head of Corporate Services access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: false }
-    },
-    {
-      name: "Super Admin",
-      slug: "super_admin",
-      accessLevel: 10,
-      description: "Full system access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: true, manageSalarySettings: true }
-    },
-    {
-      name: "COO",
-      slug: "coo",
-      accessLevel: 9,
-      description: "Chief Operating Officer access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false }
-    },
-    {
-      name: "Appraisal Committee",
-      slug: "appraisal_committee",
-      accessLevel: 8,
-      description: "Appraisal committee member access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "HR Admin",
-      slug: "hr_admin",
-      accessLevel: 7,
-      description: "HR management access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: true, manageUsers: true, systemSettings: false, manageSalarySettings: true }
-    },
-    {
-      name: "Division Head",
-      slug: "division_head",
-      accessLevel: 6,
-      description: "Division level management",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "Department Head",
-      slug: "department_head",
-      accessLevel: 5,
-      description: "Department level management",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "HR Officer",
-      slug: "hr_officer",
-      accessLevel: 4,
-      description: "HR operational access",
-      permissions: { viewAppraisals: true, createAppraisals: true, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "Unit Head",
-      slug: "unit_head",
-      accessLevel: 3,
-      description: "Unit level management",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "Supervisor",
-      slug: "supervisor",
-      accessLevel: 2,
-      description: "Team supervision",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: true, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "Employee",
-      slug: "employee",
-      accessLevel: 1,
-      description: "Standard employee access",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: false, manageTemplates: false, manageUsers: false, systemSettings: false }
-    },
-    {
-      name: "Guest",
-      slug: "guest",
-      accessLevel: 0,
-      description: "Limited access",
-      permissions: { viewAppraisals: true, createAppraisals: false, reviewApprove: false, manageTemplates: false, manageUsers: false, systemSettings: false }
-    }
-  ];
-
-  for (const roleData of defaultRoles) {
-    // Only create if it doesn't exist to prevent overwriting custom permissions
+  for (const roleData of DEFAULT_ROLES) {
+    // Only create if it doesn't exist to prevent overwriting custom permissions.
+    // To repair or backfill roles that already exist, run:
+    //   npm run migrate:role-permissions
     const existing = await Role.findOne({ slug: roleData.slug });
     if (!existing) {
       await Role.create(roleData);

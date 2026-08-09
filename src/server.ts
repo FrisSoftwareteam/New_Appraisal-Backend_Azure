@@ -99,6 +99,7 @@ app.get('/api/health', (req, res) => {
 });
 
 import { seedRoles } from './controllers/role.controller';
+import { startAttendanceReminderScheduler } from './services/attendance-reminder.scheduler';
 
 // ...
 
@@ -173,6 +174,13 @@ mongoose
       await seedRoles();
     } catch (err) {
       console.error('Error seeding roles:', err);
+    }
+
+    // Must start after the DB is up: the scheduler builds indexes and queries on every tick.
+    try {
+      await startAttendanceReminderScheduler();
+    } catch (err) {
+      console.error('Error starting attendance reminder scheduler:', err);
     }
   })
   .catch((err) => {

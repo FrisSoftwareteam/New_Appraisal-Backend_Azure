@@ -28,10 +28,10 @@ const router = express.Router();
 router.post('/initiate', authenticate, requirePermission('createAppraisals'), initiateAppraisal);
 
 // Delete All (Super Admin only - Cleanup)
-router.delete('/delete-all', authenticate, requirePermission('manageSystem'), deleteAllAppraisals);
+router.delete('/delete-all', authenticate, requirePermission('systemSettings'), deleteAllAppraisals);
 
 // Delete Single Appraisal (Admin - returns to pending initiation)
-router.delete('/:id', authenticate, requirePermission('createAppraisals'), deleteAppraisal);
+router.delete('/:id', authenticate, requirePermission('deleteAppraisals'), deleteAppraisal);
 
 // Get All (Admin/HR only)
 router.get('/', authenticate, requirePermission('viewAppraisals'), getAllAppraisals);

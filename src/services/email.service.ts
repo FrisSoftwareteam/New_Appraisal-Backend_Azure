@@ -453,3 +453,33 @@ export async function notifyAchievementReviewed(
         ]),
   });
 }
+
+// ─── Attendance Reminders ────────────────────────────────────────────
+
+export async function notifyAttendanceCheckInReminder(
+  staffEmail: string,
+  staffName: string,
+  cutoffTime: string,
+  minutesRemaining: number,
+  dateLabel: string,
+) {
+  const minutesLabel = minutesRemaining === 1 ? '1 minute' : `${minutesRemaining} minutes`;
+  await send({
+    to: staffEmail,
+    subject: `Reminder: check in before ${cutoffTime}`,
+    title: 'Attendance Check-In Reminder',
+    body:
+      paragraph(
+        `Hi ${staffName}, you have not checked in yet today. You have <strong>${minutesLabel}</strong> left before the punctuality cut-off.`,
+      ) +
+      infoTable([
+        ['Date', dateLabel],
+        ['Cut-off Time', badge(cutoffTime, 'yellow')],
+        ['Time Remaining', minutesLabel],
+        ['Current Status', badge('Not checked in', 'red')],
+      ]) +
+      paragraph(
+        `Check in before ${cutoffTime} to be recorded as on-time. If you do not check in at all today, you will be marked <strong>absent</strong>.`,
+      ),
+  });
+}

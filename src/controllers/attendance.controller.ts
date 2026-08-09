@@ -33,6 +33,13 @@ import {
   WEEKENDS_AUTO_PAUSED
 } from '../services/attendance.service';
 import {
+  getAttendanceReminderSettings,
+  isValidLeadMinutes,
+  setAttendanceReminderSettings,
+  MAX_REMINDER_LEAD_MINUTES,
+  MIN_REMINDER_LEAD_MINUTES
+} from '../services/attendance-reminder.service';
+import {
   isValidDateKey,
   isValidMonthKey,
   parseCutoffTime,
@@ -992,16 +999,19 @@ export const getAttendanceSettingsForAdmin = async (req: AuthRequest, res: Respo
     }
 
     const dateKey = getTodayDateKey();
-    const [cutoffTime, captureState] = await Promise.all([
+    const [cutoffTime, captureState, reminderSettings] = await Promise.all([
       getAttendanceCutoffTime(),
-      getAttendanceCaptureStateForDate(dateKey)
+      getAttendanceCaptureStateForDate(dateKey),
+      getAttendanceReminderSettings()
     ]);
 
     return res.json({
       cutoffTime,
       captureEnabled: captureState.captureEnabled,
       captureForcePaused: captureState.captureForcePaused,
-      weekendsAutoPaused: captureState.weekendsAutoPaused
+      weekendsAutoPaused: captureState.weekendsAutoPaused,
+      reminderEnabled: reminderSettings.enabled,
+      reminderLeadMinutes: reminderSettings.leadMinutes
     });
   } catch (error) {
     console.error('Error fetching attendance settings:', error);
@@ -1133,14 +1143,37 @@ export const updateAttendanceSettingsForAdmin = async (req: AuthRequest, res: Re
       return res.status(400).json({ message: 'cutoffTime must be in HH:mm format.' });
     }
 
+    // Reminder fields are optional so existing clients that only send cutoffTime keep working.
+    const reminderEnabled = req.body?.reminderEnabled;
+    if (reminderEnabled !== undefined && typeof reminderEnabled !== 'boolean') {
+      return res.status(400).json({ message: 'reminderEnabled must be a boolean.' });
+    }
+
+    const reminderLeadMinutesRaw = req.body?.reminderLeadMinutes;
+    let reminderLeadMinutes: number | undefined;
+    if (reminderLeadMinutesRaw !== undefined) {
+      reminderLeadMinutes = Number(reminderLeadMinutesRaw);
+      if (!isValidLeadMinutes(reminderLeadMinutes)) {
+        return res.status(400).json({
+          message: `reminderLeadMinutes must be a whole number between ${MIN_REMINDER_LEAD_MINUTES} and ${MAX_REMINDER_LEAD_MINUTES}.`
+        });
+      }
+    }
+
     const updatedCutoff = await setAttendanceCutoffTime(cutoffTime);
+    const reminderSettings = await setAttendanceReminderSettings({
+      enabled: reminderEnabled,
+      leadMinutes: reminderLeadMinutes
+    });
     const captureState = await getAttendanceCaptureStateForDate(getTodayDateKey());
 
     return res.json({
       cutoffTime: updatedCutoff,
       captureEnabled: captureState.captureEnabled,
       captureForcePaused: captureState.captureForcePaused,
-      weekendsAutoPaused: captureState.weekendsAutoPaused
+      weekendsAutoPaused: captureState.weekendsAutoPaused,
+      reminderEnabled: reminderSettings.enabled,
+      reminderLeadMinutes: reminderSettings.leadMinutes
     });
   } catch (error) {
     console.error('Error updating attendance settings:', error);

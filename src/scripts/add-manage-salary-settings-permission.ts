@@ -4,6 +4,11 @@ import Role from '../models/Role';
 
 dotenv.config();
 
+// SUPERSEDED by src/scripts/repair-role-permissions.ts (npm run migrate:role-permissions),
+// which writes the full canonical matrix for every permission key at once. This script
+// force-writes manageSalarySettings from its own hardcoded slug list and will undo part of
+// that repair if run afterwards. Kept only for historical reference — do not run it.
+//
 // seedRoles() only creates roles that don't exist yet, so it never backfills a new
 // permission key onto Role documents already in the database. This one-time script
 // does that backfill for the new `manageSalarySettings` permission.
