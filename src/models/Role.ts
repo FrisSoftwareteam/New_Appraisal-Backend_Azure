@@ -15,6 +15,7 @@ export interface IRole extends Document {
     committeeReview: boolean;
     deleteAppraisals: boolean;
     manageSalarySettings: boolean;
+    viewReports: boolean;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -34,7 +35,8 @@ const RoleSchema: Schema = new Schema({
     systemSettings: { type: Boolean, default: false },
     committeeReview: { type: Boolean, default: false },
     deleteAppraisals: { type: Boolean, default: false },
-    manageSalarySettings: { type: Boolean, default: false }
+    manageSalarySettings: { type: Boolean, default: false },
+    viewReports: { type: Boolean, default: false }
   }
 }, { timestamps: true });
 
