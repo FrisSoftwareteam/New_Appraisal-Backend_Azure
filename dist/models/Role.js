@@ -48,7 +48,8 @@ const RoleSchema = new mongoose_1.Schema({
         systemSettings: { type: Boolean, default: false },
         committeeReview: { type: Boolean, default: false },
         deleteAppraisals: { type: Boolean, default: false },
-        manageSalarySettings: { type: Boolean, default: false }
+        manageSalarySettings: { type: Boolean, default: false },
+        viewReports: { type: Boolean, default: false }
     }
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Role', RoleSchema);

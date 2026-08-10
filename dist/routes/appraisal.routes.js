@@ -12,9 +12,9 @@ const router = express_1.default.Router();
 // Initiate (Admin/HR only)
 router.post('/initiate', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('createAppraisals'), appraisal_controller_1.initiateAppraisal);
 // Delete All (Super Admin only - Cleanup)
-router.delete('/delete-all', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('manageSystem'), appraisal_controller_1.deleteAllAppraisals);
+router.delete('/delete-all', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('systemSettings'), appraisal_controller_1.deleteAllAppraisals);
 // Delete Single Appraisal (Admin - returns to pending initiation)
-router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('createAppraisals'), appraisal_controller_1.deleteAppraisal);
+router.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('deleteAppraisals'), appraisal_controller_1.deleteAppraisal);
 // Get All (Admin/HR only)
 router.get('/', auth_middleware_1.authenticate, (0, auth_middleware_1.requirePermission)('viewAppraisals'), appraisal_controller_1.getAllAppraisals);
 // Get assignments

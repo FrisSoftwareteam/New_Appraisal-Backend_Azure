@@ -36,9 +36,20 @@ export async function getGradeByName(name: string): Promise<IGrade | null> {
   return grades.find((g) => g.name === name) ?? null;
 }
 
+/**
+ * Notch 1 IS the grade's basic salary. Notch 0 is the probation step - the basic salary
+ * reduced by the grade's Notch 1 percentage. From Notch 2 upward each notch compounds its
+ * own percentage onto the notch below it, so notchPercentages[0] is never an increase; it
+ * exists solely to define the probation reduction.
+ */
 export function computeBasicSalary(grade: IGrade, notch: number): number {
+  if (notch <= 0) {
+    const probationPercentage = grade.notchPercentages[0] ?? 0;
+    return grade.basicSalary * (1 - probationPercentage / 100);
+  }
+
   let salary = grade.basicSalary;
-  for (let n = 1; n <= notch; n++) {
+  for (let n = 2; n <= notch; n++) {
     const percentage = grade.notchPercentages[n - 1] ?? 0;
     salary = salary * (1 + percentage / 100);
   }
@@ -85,7 +96,9 @@ export function computeMigratedBalanceSeed(
  * "notch changes recalculate immediately" requirement.
  */
 export async function getLiveEntitlementForUser(user: IUser): Promise<LiveEntitlement> {
-  if (!user.grade || !user.notch) {
+  // Notch 0 (probation) is a real, assignable notch - compare against null explicitly so it
+  // isn't mistaken for "no notch set".
+  if (!user.grade || user.notch == null) {
     return { grade: null, basicSalary: 0, entitlementDays: 0, entitlementAllowance: 0 };
   }
 
@@ -290,7 +303,7 @@ export async function getComputedUserBalancesBatch(
     let basicSalary = 0;
     let entitlementDays = 0;
     let entitlementAllowance = 0;
-    if (user.grade && user.notch) {
+    if (user.grade && user.notch != null) {
       const grade = gradeByName.get(user.grade);
       if (grade) {
         basicSalary = computeBasicSalary(grade, user.notch);
