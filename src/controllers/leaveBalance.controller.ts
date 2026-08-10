@@ -131,7 +131,7 @@ export const bulkImportLeaveBalances = async (req: Request, res: Response) => {
 
         const notchRaw = notchKey ? row[notchKey] : undefined;
         const notch = parseInt(String(notchRaw), 10);
-        if (!Number.isInteger(notch) || notch < 1 || notch > 20) {
+        if (!Number.isInteger(notch) || notch < 0 || notch > 20) {
           results.failed++;
           results.errors.push({ email, reason: `Invalid or missing notch value: ${notchRaw}` });
           continue;

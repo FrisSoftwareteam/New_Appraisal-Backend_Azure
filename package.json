@@ -12,6 +12,7 @@
     "seed:appraisal": "ts-node scripts/seed-appraisal.ts",
     "migrate:salary-permission": "ts-node src/scripts/add-manage-salary-settings-permission.ts",
     "migrate:role-permissions": "ts-node src/scripts/repair-role-permissions.ts",
+    "payscale:apply": "ts-node src/scripts/set-grade-basic-salary-from-payscale.ts",
     "seed:org-taxonomy": "ts-node src/scripts/seed-org-taxonomy.ts",
     "reminders:dry-run": "ts-node src/scripts/run-attendance-reminders.ts",
     "vercel-build": "npm run build"

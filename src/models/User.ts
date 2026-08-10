@@ -79,7 +79,8 @@ const UserSchema: Schema = new Schema({
   division: { type: String, required: true },
   unit: { type: String },
   grade: { type: String, required: true },
-  notch: { type: Number, min: 1, max: 20 },
+  // 0 is the probation notch (basic salary reduced by the grade's Notch 1 percentage).
+  notch: { type: Number, min: 0, max: 20 },
   jobTitle: { type: String },
   designation: { type: String },
   gender: { type: String },

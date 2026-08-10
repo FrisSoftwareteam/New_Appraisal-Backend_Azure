@@ -638,8 +638,8 @@ export const updateStaffNotch = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { notch } = req.body;
 
-    if (typeof notch !== 'number' || !Number.isInteger(notch) || notch < 1 || notch > 20) {
-      return res.status(400).json({ message: 'notch must be an integer between 1 and 20' });
+    if (typeof notch !== 'number' || !Number.isInteger(notch) || notch < 0 || notch > 20) {
+      return res.status(400).json({ message: 'notch must be an integer between 0 and 20' });
     }
 
     const user = await User.findById(id);
@@ -733,7 +733,7 @@ export const bulkImportSalaryData = async (req: Request, res: Response) => {
         }
 
         const notch = parseInt(String(notchRaw), 10);
-        if (!Number.isInteger(notch) || notch < 1 || notch > 20) {
+        if (!Number.isInteger(notch) || notch < 0 || notch > 20) {
           results.failed++;
           results.errors.push({ email, reason: `Invalid notch value: ${notchRaw}` });
           continue;
