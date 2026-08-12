@@ -64,6 +64,44 @@ export function computeLeaveAllowance(grade: IGrade, notch: number, ratePercent:
   return computeBasicSalary(grade, notch) * (ratePercent / 100) + grade.holidayAllowance;
 }
 
+/** The opening/consumed half of a balance row - the persisted side of a remaining calculation. */
+interface RemainingInputs {
+  openingCarryoverDays: number;
+  openingCarryoverAllowance: number;
+  daysUsed: number;
+  allowanceClaimed: number;
+}
+
+/**
+ * Days are consumed incrementally, so this is a plain floor: nobody can owe leave back, and a
+ * grade whose annualLeaveDays was revised downward must not push an already-settled balance
+ * below zero.
+ */
+export function computeDaysRemaining(balance: RemainingInputs, entitlementDays: number): number {
+  return Math.max(0, balance.openingCarryoverDays + entitlementDays - balance.daysUsed);
+}
+
+/**
+ * The year's allowance is a single all-or-nothing pool - applyLeaveApprovalToBalance claims
+ * whatever is left in one go, and the legacy spreadsheet import seeds a full claim the same way -
+ * so a non-zero allowanceClaimed means the pool is settled and nothing remains.
+ *
+ * Deciding that by comparing the money instead is what breaks: entitlement is always recomputed
+ * from the CURRENT grade (see getLiveEntitlementForUser) while allowanceClaimed records what was
+ * actually paid under the figures in force at the time, so a pay review drifts the two apart in
+ * whichever direction that grade moved. The payscale:apply run left 46 settled balances reading a
+ * few thousand naira negative and one reading a few hundred still claimable. Neither is real
+ * money. Treating "claimed" as terminal makes this figure agree with the hasClaimedAllowanceThisYear
+ * badge shown beside it, and survives the next pay review in both directions.
+ *
+ * Reopening a pool is still possible where it should be - setting allowanceClaimed back to 0
+ * through the HR adjust endpoint.
+ */
+export function computeAllowanceRemaining(balance: RemainingInputs, entitlementAllowance: number): number {
+  if (balance.allowanceClaimed > 0) return 0;
+  return Math.max(0, balance.openingCarryoverAllowance + entitlementAllowance);
+}
+
 export interface MigratedBalanceSeed {
   openingCarryoverDays: number;
   openingCarryoverAllowance: number;
@@ -171,8 +209,11 @@ export async function getOrInitLeaveBalanceForYear(
     const entitlementDays = entitlement?.entitlementDays ?? 0;
     const entitlementAllowance = entitlement?.entitlementAllowance ?? 0;
 
-    let carryDays = priorBalance.openingCarryoverDays + entitlementDays - priorBalance.daysUsed;
-    let carryAllowance = priorBalance.openingCarryoverAllowance + entitlementAllowance - priorBalance.allowanceClaimed;
+    // Whatever the prior year left over becomes this year's opening balance, and unlike the
+    // read paths this figure is PERSISTED - so a drifted entitlement must be floored here or a
+    // transient display artefact becomes a permanent negative carryover.
+    let carryDays = computeDaysRemaining(priorBalance, entitlementDays);
+    let carryAllowance = computeAllowanceRemaining(priorBalance, entitlementAllowance);
 
     // Backfill any fully-skipped years between the last known balance and the target year.
     for (let y = priorBalance.leaveYear + 1; y < year; y++) {
@@ -233,9 +274,8 @@ export async function getComputedUserBalance(
   const balance = await getOrInitLeaveBalanceForYear(userId, targetYear);
   const entitlement = await getLiveEntitlementForUser(user);
 
-  const daysRemaining = balance.openingCarryoverDays + entitlement.entitlementDays - balance.daysUsed;
-  const allowanceRemaining =
-    balance.openingCarryoverAllowance + entitlement.entitlementAllowance - balance.allowanceClaimed;
+  const daysRemaining = computeDaysRemaining(balance, entitlement.entitlementDays);
+  const allowanceRemaining = computeAllowanceRemaining(balance, entitlement.entitlementAllowance);
 
   return {
     leaveYear: targetYear,
@@ -312,9 +352,8 @@ export async function getComputedUserBalancesBatch(
       }
     }
 
-    const daysRemaining = balance.openingCarryoverDays + entitlementDays - balance.daysUsed;
-    const allowanceRemaining =
-      balance.openingCarryoverAllowance + entitlementAllowance - balance.allowanceClaimed;
+    const daysRemaining = computeDaysRemaining(balance, entitlementDays);
+    const allowanceRemaining = computeAllowanceRemaining(balance, entitlementAllowance);
 
     result.set(user._id.toString(), {
       leaveYear: targetYear,
@@ -353,8 +392,7 @@ export async function applyLeaveApprovalToBalance(request: ILeaveRequest): Promi
   }
 
   if (request.leaveAllowance === 'required' || request.leaveAllowance === 'already_claimed') {
-    const remaining = balance.openingCarryoverAllowance + entitlementAllowance - balance.allowanceClaimed;
-    const amountApplied = remaining > 0 ? remaining : 0;
+    const amountApplied = computeAllowanceRemaining(balance, entitlementAllowance);
 
     balance.allowanceClaimed += amountApplied;
     balance.allowanceClaimHistory.push({

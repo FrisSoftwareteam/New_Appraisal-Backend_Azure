@@ -1,5 +1,6 @@
 import cron, { ScheduledTask } from 'node-cron';
 import AttendanceReminderLog from '../models/AttendanceReminderLog';
+import AttendanceReminderExemption from '../models/AttendanceReminderExemption';
 import { getAttendanceTimezone } from './attendance.service';
 import { runAttendanceCheckInReminders } from './attendance-reminder.service';
 
@@ -21,6 +22,8 @@ export async function startAttendanceReminderScheduler() {
   // mongoose connects with autoIndex: false, so the unique { dateKey, userId }
   // guard has to be built explicitly — without it duplicate reminders are possible.
   await AttendanceReminderLog.syncIndexes();
+  // Likewise the unique { userId } guard behind the reminder exemption list.
+  await AttendanceReminderExemption.syncIndexes();
 
   const timezone = getAttendanceTimezone();
   task = cron.schedule(

@@ -39,6 +39,11 @@ import {
   MAX_REMINDER_LEAD_MINUTES,
   MIN_REMINDER_LEAD_MINUTES
 } from '../services/attendance-reminder.service';
+import AttendanceReminderExemption from '../models/AttendanceReminderExemption';
+import {
+  listAttendanceReminderExemptions,
+  serializeAttendanceReminderExemption
+} from '../services/attendance-reminder-exemption.service';
 import {
   isValidDateKey,
   isValidMonthKey,
@@ -1410,6 +1415,94 @@ export const createAttendanceExceptionForAdmin = async (req: AuthRequest, res: R
   } catch (error) {
     console.error('Error creating attendance exception:', error);
     return res.status(500).json({ message: 'Error creating attendance exception', error });
+  }
+};
+
+export const getAttendanceReminderExemptionsForAdmin = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!ensureAttendanceAdmin(req, res)) {
+      return;
+    }
+
+    const items = await listAttendanceReminderExemptions();
+    return res.json({ items });
+  } catch (error) {
+    console.error('Error fetching attendance reminder exemptions:', error);
+    return res.status(500).json({ message: 'Error fetching attendance reminder exemptions', error });
+  }
+};
+
+export const createAttendanceReminderExemptionForAdmin = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    if (!ensureAttendanceAdmin(req, res)) {
+      return;
+    }
+
+    const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'A valid userId is required.' });
+    }
+
+    if (reason.length > 300) {
+      return res.status(400).json({ message: 'reason must be 300 characters or fewer.' });
+    }
+
+    const user = await User.findById(userId).select('_id firstName lastName email');
+    if (!user) {
+      return res.status(404).json({ message: 'Target user not found.' });
+    }
+
+    const item = await AttendanceReminderExemption.create({
+      userId: user._id,
+      userName: getUserName(user.firstName, user.lastName, user.email),
+      email: user.email,
+      reason: reason || undefined,
+      exemptedById: req.user!._id,
+      exemptedByName: getUserName(req.user!.firstName, req.user!.lastName, req.user!.email)
+    });
+
+    return res.status(201).json({ item: serializeAttendanceReminderExemption(item) });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      // The unique { userId } index — this person is already on the list.
+      return res
+        .status(409)
+        .json({ message: 'This user is already exempt from reminder emails.' });
+    }
+
+    console.error('Error creating attendance reminder exemption:', error);
+    return res.status(500).json({ message: 'Error creating attendance reminder exemption', error });
+  }
+};
+
+export const deleteAttendanceReminderExemptionForAdmin = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    if (!ensureAttendanceAdmin(req, res)) {
+      return;
+    }
+
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'A valid userId is required.' });
+    }
+
+    const removed = await AttendanceReminderExemption.findOneAndDelete({ userId });
+    if (!removed) {
+      return res.status(404).json({ message: 'Reminder exemption not found.' });
+    }
+
+    return res.json({ message: 'Reminder exemption removed.' });
+  } catch (error) {
+    console.error('Error deleting attendance reminder exemption:', error);
+    return res.status(500).json({ message: 'Error deleting attendance reminder exemption', error });
   }
 };
 

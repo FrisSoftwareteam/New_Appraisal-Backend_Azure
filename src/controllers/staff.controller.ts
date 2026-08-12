@@ -10,6 +10,10 @@ import AppraisalTemplate from '../models/AppraisalTemplate';
 import LeaveBalance from '../models/LeaveBalance';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createAuditLog } from './audit.controller';
+import {
+  extractTrainingRecommendationSignals,
+  getTrainingSignalMap
+} from '../services/training.service';
 
 // Get all staff with optional filtering
 export const getAllStaff = async (req: Request, res: Response) => {
@@ -62,6 +66,8 @@ export const getAllStaff = async (req: Request, res: Response) => {
       {
         $group: {
           _id: '$employee',
+          appraisalId: { $first: '$_id' },
+          period: { $first: '$period' },
           reviews: { $first: '$reviews' },
           adminEditedVersion: { $first: '$adminEditedVersion' },
         },
@@ -74,37 +80,21 @@ export const getAllStaff = async (req: Request, res: Response) => {
       appraisalMap.set(String(app._id), app);
     });
 
+    // Shared with the Training module and report exports so a template question-id
+    // change is picked up everywhere at once.
+    const signalMap = await getTrainingSignalMap();
+
     const staffWithTraining = staff.map((member: any) => {
       const app = appraisalMap.get(String(member._id));
-      let trainingNeededByEmployee = "";
-      let trainingRecommendedByAppraiser = "";
-
-      if (app) {
-        // Find latest review for "q1766971270364"
-        const reviews = app.reviews || [];
-        for (let i = reviews.length - 1; i >= 0; i--) {
-          const resp = (reviews[i].responses || []).find((r: any) => r.questionId === "q1766971270364");
-          if (resp) {
-            trainingNeededByEmployee = String(resp.response);
-            break;
-          }
-        }
-
-        // Find latest adminEditedVersion review for "q1766971484543"
-        const adminReviews = (app.adminEditedVersion?.reviews || []);
-        for (let i = adminReviews.length - 1; i >= 0; i--) {
-          const resp = (adminReviews[i].responses || []).find((r: any) => r.questionId === "q1766971484543");
-          if (resp) {
-            trainingRecommendedByAppraiser = String(resp.response);
-            break;
-          }
-        }
-      }
+      const signals = extractTrainingRecommendationSignals(
+        app ? { ...app, _id: app.appraisalId } : null,
+        signalMap
+      );
 
       return {
         ...member,
-        trainingNeededByEmployee,
-        trainingRecommendedByAppraiser
+        trainingNeededByEmployee: signals.trainingNeededByEmployee,
+        trainingRecommendedByAppraiser: signals.trainingRecommendedByAppraiser
       };
     });
 

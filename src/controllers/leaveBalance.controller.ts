@@ -238,6 +238,15 @@ export const adjustLeaveBalance = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'At least one balance field must be provided' });
     }
 
+    // Caught here rather than left to the schema's min so HR sees which field was wrong
+    // instead of a Mongoose ValidationError surfacing as a 500.
+    const negative = updates.filter((f) => (body[f] as number) < 0);
+    if (negative.length > 0) {
+      return res.status(400).json({
+        message: `Leave balance values cannot be negative: ${negative.join(', ')}`,
+      });
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'Staff member not found' });
