@@ -33,7 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.TRAINING_SIGNAL_KINDS = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+/**
+ * Marks a question as the source of a training signal so the Training module can
+ * discover it by tag instead of by hardcoded question id.
+ */
+exports.TRAINING_SIGNAL_KINDS = [
+    'employee_need',
+    'appraiser_recommendation',
+    'action_recommended'
+];
 const AppraisalQuestionSchema = new mongoose_1.Schema({
     id: { type: String, required: true },
     text: { type: String, required: true },
@@ -53,6 +63,10 @@ const AppraisalQuestionSchema = new mongoose_1.Schema({
     maxScore: { type: Number, default: 5 },
     isRequired: { type: Boolean, default: true },
     isScored: { type: Boolean, default: true },
+    // The template editor has always written this for multiple_choice questions; without
+    // the field declared, strict mode silently dropped it on save.
+    correctAnswer: { type: String },
+    trainingSignal: { type: String, enum: exports.TRAINING_SIGNAL_KINDS },
 });
 const AppraisalTemplateSchema = new mongoose_1.Schema({
     name: { type: String, required: true },

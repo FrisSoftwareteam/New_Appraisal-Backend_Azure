@@ -56,6 +56,7 @@ const period_utils_1 = require("../utils/period-utils");
 const AppraisalTemplate_1 = __importDefault(require("../models/AppraisalTemplate"));
 const LeaveBalance_1 = __importDefault(require("../models/LeaveBalance"));
 const audit_controller_1 = require("./audit.controller");
+const training_service_1 = require("../services/training.service");
 // Get all staff with optional filtering
 const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -99,6 +100,8 @@ const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             {
                 $group: {
                     _id: '$employee',
+                    appraisalId: { $first: '$_id' },
+                    period: { $first: '$period' },
                     reviews: { $first: '$reviews' },
                     adminEditedVersion: { $first: '$adminEditedVersion' },
                 },
@@ -109,33 +112,13 @@ const getAllStaff = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         latestAppraisals.forEach(app => {
             appraisalMap.set(String(app._id), app);
         });
+        // Shared with the Training module and report exports so a template question-id
+        // change is picked up everywhere at once.
+        const signalMap = yield (0, training_service_1.getTrainingSignalMap)();
         const staffWithTraining = staff.map((member) => {
-            var _a;
             const app = appraisalMap.get(String(member._id));
-            let trainingNeededByEmployee = "";
-            let trainingRecommendedByAppraiser = "";
-            if (app) {
-                // Find latest review for "q1766971270364"
-                const reviews = app.reviews || [];
-                for (let i = reviews.length - 1; i >= 0; i--) {
-                    const resp = (reviews[i].responses || []).find((r) => r.questionId === "q1766971270364");
-                    if (resp) {
-                        trainingNeededByEmployee = String(resp.response);
-                        break;
-                    }
-                }
-                // Find latest adminEditedVersion review for "q1766971484543"
-                const adminReviews = (((_a = app.adminEditedVersion) === null || _a === void 0 ? void 0 : _a.reviews) || []);
-                for (let i = adminReviews.length - 1; i >= 0; i--) {
-                    const resp = (adminReviews[i].responses || []).find((r) => r.questionId === "q1766971484543");
-                    if (resp) {
-                        trainingRecommendedByAppraiser = String(resp.response);
-                        break;
-                    }
-                }
-            }
-            return Object.assign(Object.assign({}, member), { trainingNeededByEmployee,
-                trainingRecommendedByAppraiser });
+            const signals = (0, training_service_1.extractTrainingRecommendationSignals)(app ? Object.assign(Object.assign({}, app), { _id: app.appraisalId }) : null, signalMap);
+            return Object.assign(Object.assign({}, member), { trainingNeededByEmployee: signals.trainingNeededByEmployee, trainingRecommendedByAppraiser: signals.trainingRecommendedByAppraiser });
         });
         res.status(200).json(staffWithTraining);
     }

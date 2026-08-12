@@ -10,6 +10,7 @@ import {
   getAttendanceTimezone,
   getAttendanceAbsenceSummaryForRange
 } from '../services/attendance.service';
+import { findLatestResponse, getTrainingSignalMap } from '../services/training.service';
 
 // Return available periods derived from appraisals (fallback when /periods is empty)
 export const getReportPeriods = async (req: Request, res: Response) => {
@@ -186,8 +187,10 @@ export const exportReport = async (req: Request, res: Response) => {
         return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
     };
 
-    // We will use hardcoded question ID "q21" as requested for recommendations.
-
+    // Question ids come from the shared training-signal map (template `trainingSignal`
+    // tags, unioned with the legacy hardcoded ids) so retagging a template updates the
+    // Training module, the staff list and this export together.
+    const signalMap = await getTrainingSignalMap();
 
     const reportData = appraisals.map((app: any) => {
         const emp = app.employee as any;
@@ -196,50 +199,21 @@ export const exportReport = async (req: Request, res: Response) => {
         // Effective Overall Score (Admin edit overrides)
         const overallRating = app.adminEditedVersion?.overallScore ?? app.overallScore ?? '';
 
-        let appraiserRec = '';
-        let committeeRec = '';
-
-        // Appraiser Recommendation: Search backward from main reviews for the first "q21"
         const reviews = app.reviews || [];
-        for (let i = reviews.length - 1; i >= 0; i--) {
-            const resp = (reviews[i].responses || []).find((r: any) => r.questionId === 'q21');
-            if (resp) {
-                appraiserRec = String(resp.response);
-                break;
-            }
-        }
+        const adminReviews = app.adminEditedVersion?.reviews || [];
 
-        // Committee Recommendation: Search backward from adminEditedVersion reviews for the first "q21"
-        const adminReviews = (app.adminEditedVersion?.reviews || []);
-        for (let i = adminReviews.length - 1; i >= 0; i--) {
-            const resp = (adminReviews[i].responses || []).find((r: any) => r.questionId === 'q21');
-            if (resp) {
-                committeeRec = String(resp.response);
-                break;
-            }
-        }
+        // Appraiser vs Committee stay distinct columns: the same question read from the
+        // original reviews and from the admin-edited version respectively.
+        const appraiserRec = findLatestResponse(reviews, signalMap.action_recommended);
+        const committeeRec = findLatestResponse(adminReviews, signalMap.action_recommended);
 
-        let trainingNeeded = '';
-        let trainingRecommended = '';
+        const trainingNeeded = findLatestResponse(reviews, signalMap.employee_need);
+        const trainingRecommended = findLatestResponse(
+            adminReviews,
+            signalMap.appraiser_recommendation
+        );
 
-        // Training Needed: Latest review with q1766971270364
-        for (let i = reviews.length - 1; i >= 0; i--) {
-            const resp = (reviews[i].responses || []).find((r: any) => r.questionId === 'q1766971270364');
-            if (resp) {
-                trainingNeeded = String(resp.response);
-                break;
-            }
-        }
 
-        // Training Recommended: Latest admin review with q1766971484543
-        for (let i = adminReviews.length - 1; i >= 0; i--) {
-            const resp = (adminReviews[i].responses || []).find((r: any) => r.questionId === 'q1766971484543');
-            if (resp) {
-                trainingRecommended = String(resp.response);
-                break;
-            }
-        }
-        
         return {
             "Employee ID": emp.id || 'N/A',
             "Full Name": `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Unknown',

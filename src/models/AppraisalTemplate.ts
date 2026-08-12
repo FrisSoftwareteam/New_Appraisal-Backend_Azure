@@ -2,6 +2,18 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export type QuestionType = "rating" | "text" | "multiple_choice" | "attendance" | "punctuality";
 
+/**
+ * Marks a question as the source of a training signal so the Training module can
+ * discover it by tag instead of by hardcoded question id.
+ */
+export const TRAINING_SIGNAL_KINDS = [
+  'employee_need',
+  'appraiser_recommendation',
+  'action_recommended'
+] as const;
+
+export type TrainingSignalKind = (typeof TRAINING_SIGNAL_KINDS)[number];
+
 export interface IAppraisalQuestion {
   id: string;
   text: string;
@@ -14,6 +26,8 @@ export interface IAppraisalQuestion {
   maxScore: number;
   isRequired: boolean;
   isScored: boolean;
+  correctAnswer?: string;
+  trainingSignal?: TrainingSignalKind;
 }
 
 export interface IAppraisalTemplate extends Document {
@@ -48,6 +62,10 @@ const AppraisalQuestionSchema: Schema = new Schema({
   maxScore: { type: Number, default: 5 },
   isRequired: { type: Boolean, default: true },
   isScored: { type: Boolean, default: true },
+  // The template editor has always written this for multiple_choice questions; without
+  // the field declared, strict mode silently dropped it on save.
+  correctAnswer: { type: String },
+  trainingSignal: { type: String, enum: TRAINING_SIGNAL_KINDS },
 });
 
 const AppraisalTemplateSchema: Schema = new Schema({

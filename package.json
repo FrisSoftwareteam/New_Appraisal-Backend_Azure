@@ -15,7 +15,8 @@
     "payscale:apply": "ts-node src/scripts/set-grade-basic-salary-from-payscale.ts",
     "seed:org-taxonomy": "ts-node src/scripts/seed-org-taxonomy.ts",
     "reminders:dry-run": "ts-node src/scripts/run-attendance-reminders.ts",
-    "vercel-build": "npm run build"
+    "vercel-build": "npm run build",
+    "migrate:training-indexes": "ts-node src/scripts/sync-training-indexes.ts"
   },
   "keywords": [],
   "author": "",

@@ -4,6 +4,7 @@ import AttendanceSetting from '../models/AttendanceSetting';
 import User from '../models/User';
 import { notifyAttendanceCheckInReminder } from './email.service';
 import { getExceptionMapForUsersOnDate, listAttendanceExceptionsInRange } from './attendance-exception.service';
+import { getExemptUserIdSet } from './attendance-reminder-exemption.service';
 import {
   getAttendanceCaptureStateForDate,
   getAttendanceCutoffTime,
@@ -288,8 +289,9 @@ export interface ReminderCandidate {
 /**
  * Employees expected in today who have neither checked in nor already been
  * reminded. Excludes guests, users without an email, users not yet employed,
- * and anyone with an approved attendance exception (leave, public holiday,
- * non-working day) covering today.
+ * anyone with an approved attendance exception (leave, public holiday,
+ * non-working day) covering today, and anyone an HR Admin has permanently
+ * exempted from reminder emails.
  */
 export async function findUsersNeedingCheckInReminder(
   dateKey: string,
@@ -321,14 +323,15 @@ export async function findUsersNeedingCheckInReminder(
 
   const userIds = eligible.map((user) => user._id.toString());
 
-  const [exceptionMap, existingRecords, alreadyReminded] = await Promise.all([
+  const [exceptionMap, existingRecords, alreadyReminded, exempt] = await Promise.all([
     getExceptionMapForUsersOnDate(userIds, dateKey),
     AttendanceRecord.find({ dateKey, userId: { $in: userIds } })
       .select('userId')
       .lean(),
     AttendanceReminderLog.find({ dateKey, userId: { $in: userIds } })
       .select('userId')
-      .lean()
+      .lean(),
+    getExemptUserIdSet(userIds)
   ]);
 
   const checkedIn = new Set(existingRecords.map((record) => record.userId.toString()));
@@ -337,7 +340,7 @@ export async function findUsersNeedingCheckInReminder(
   return eligible
     .filter((user) => {
       const id = user._id.toString();
-      return !checkedIn.has(id) && !reminded.has(id) && !exceptionMap.has(id);
+      return !checkedIn.has(id) && !reminded.has(id) && !exceptionMap.has(id) && !exempt.has(id);
     })
     .map((user) => {
       const firstName = (user.firstName as string | undefined)?.trim() ?? '';

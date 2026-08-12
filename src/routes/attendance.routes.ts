@@ -9,11 +9,14 @@ import {
   onPremCheckOut,
   createMyAttendanceExceptionRequest,
   createAttendanceExceptionForAdmin,
+  createAttendanceReminderExemptionForAdmin,
   deleteAttendanceExceptionForAdmin,
+  deleteAttendanceReminderExemptionForAdmin,
   deleteAttendanceEntry,
   getAttendanceCaptureControlForAdmin,
   getAttendanceExceptionRequestsForAdmin,
   getAttendanceExceptionsForAdmin,
+  getAttendanceReminderExemptionsForAdmin,
   getAdminUserMonthlyAttendance,
   getAdminUserPeriodAttendance,
   getAttendanceSettingsForAdmin,
@@ -66,6 +69,9 @@ router.put('/admin/exceptions/:id', authenticate, updateAttendanceExceptionForAd
 router.delete('/admin/exceptions/:id', authenticate, deleteAttendanceExceptionForAdmin);
 router.get('/admin/exception-requests', authenticate, getAttendanceExceptionRequestsForAdmin);
 router.put('/admin/exception-requests/:id/review', authenticate, reviewAttendanceExceptionRequestForAdmin);
+router.get('/admin/reminder-exemptions', authenticate, getAttendanceReminderExemptionsForAdmin);
+router.post('/admin/reminder-exemptions', authenticate, createAttendanceReminderExemptionForAdmin);
+router.delete('/admin/reminder-exemptions/:userId', authenticate, deleteAttendanceReminderExemptionForAdmin);
 router.delete('/admin/trial-data', authenticate, clearTrialDataForAdmin);
 router.post('/admin/offline-upload', authenticate, upload.single('file'), uploadAttendanceForOfflineMode);
 

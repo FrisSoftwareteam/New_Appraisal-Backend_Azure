@@ -483,3 +483,126 @@ export async function notifyAttendanceCheckInReminder(
       ),
   });
 }
+
+// ─── Training Notifications ──────────────────────────────────────────
+
+export async function notifyTrainingAssigned(
+  staffEmail: string,
+  staffName: string,
+  title: string,
+  assignedByName: string,
+  dueDate?: string,
+  hasTest?: boolean,
+) {
+  await send({
+    to: staffEmail,
+    subject: `New training assigned: ${title}`,
+    title: 'Training Assigned',
+    body:
+      paragraph(
+        `Hi ${staffName}, <strong>${assignedByName}</strong> has assigned you a development training plan.`,
+      ) +
+      infoTable([
+        ['Training', title],
+        ['Assigned By', assignedByName],
+        ['Due Date', dueDate || 'Not set'],
+        ['Assessment', hasTest ? badge('Test required', 'yellow') : badge('No test', 'gray')],
+      ]) +
+      paragraph(
+        hasTest
+          ? 'You must pass the attached assessment before you can submit this training for approval.'
+          : 'Open the Training page to start, then submit it for approval when you are done.',
+      ),
+  });
+}
+
+export async function notifyTrainingSubmittedForReview(
+  reviewerEmails: string[],
+  staffName: string,
+  title: string,
+  note: string,
+  testSummary: string,
+) {
+  await send({
+    to: reviewerEmails,
+    subject: `Training awaiting your approval: ${title}`,
+    title: 'Training Submitted for Approval',
+    body:
+      paragraph(`<strong>${staffName}</strong> has submitted a training for your approval.`) +
+      infoTable([
+        ['Training', title],
+        ['Trainee', staffName],
+        ['Assessment', testSummary],
+        ['Status', badge('Pending review', 'yellow')],
+      ]) +
+      (note ? paragraph(`<strong>Their note:</strong> ${note}`) : '') +
+      paragraph('Review the training, add any comments, then approve or request changes.'),
+  });
+}
+
+export async function notifyTrainingApproved(
+  staffEmail: string,
+  staffName: string,
+  title: string,
+  approvedByName: string,
+  note: string,
+) {
+  await send({
+    to: staffEmail,
+    subject: `Training approved: ${title}`,
+    title: 'Training Approved',
+    body:
+      paragraph(`Hi ${staffName}, your training has been approved and marked complete.`) +
+      infoTable([
+        ['Training', title],
+        ['Approved By', approvedByName],
+        ['Status', badge('Completed', 'green')],
+      ]) +
+      (note ? paragraph(`<strong>Reviewer comment:</strong> ${note}`) : ''),
+  });
+}
+
+export async function notifyTrainingRejected(
+  staffEmail: string,
+  staffName: string,
+  title: string,
+  reviewerName: string,
+  reason: string,
+) {
+  await send({
+    to: staffEmail,
+    subject: `Changes requested on your training: ${title}`,
+    title: 'Training Changes Requested',
+    body:
+      paragraph(
+        `Hi ${staffName}, <strong>${reviewerName}</strong> has requested changes before this training can be approved.`,
+      ) +
+      infoTable([
+        ['Training', title],
+        ['Reviewer', reviewerName],
+        ['Status', badge('Back in progress', 'red')],
+      ]) +
+      paragraph(`<strong>Reason:</strong> ${reason}`) +
+      paragraph('Address the feedback and submit the training for approval again.'),
+  });
+}
+
+export async function notifyTrainingComment(
+  recipientEmails: string[],
+  authorName: string,
+  title: string,
+  body: string,
+) {
+  await send({
+    to: recipientEmails,
+    subject: `New comment on training: ${title}`,
+    title: 'New Training Comment',
+    body:
+      paragraph(`<strong>${authorName}</strong> commented on a training you are involved in.`) +
+      infoTable([
+        ['Training', title],
+        ['From', authorName],
+      ]) +
+      paragraph(body),
+  });
+}
