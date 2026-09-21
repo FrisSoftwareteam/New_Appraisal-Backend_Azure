@@ -1939,17 +1939,18 @@ async function reverseGeocode(latitude: number, longitude: number) {
     case 'google':
       return reverseGeocodeGoogle(latitude, longitude);
     case 'nominatim':
-    default:
       return reverseGeocodeNominatim(latitude, longitude);
+    default:
+      return reverseGeocodeGoogle(latitude, longitude);
   }
 }
 
 function getReverseGeocodeProvider(): 'nominatim' | 'mapbox' | 'google' {
-  const value = (process.env.REVERSE_GEOCODE_PROVIDER ?? 'nominatim').trim().toLowerCase();
+  const value = (process.env.REVERSE_GEOCODE_PROVIDER ?? 'google').trim().toLowerCase();
   if (value === 'mapbox' || value === 'google' || value === 'nominatim') {
     return value;
   }
-  return 'nominatim';
+  return 'google';
 }
 
 async function reverseGeocodeNominatim(latitude: number, longitude: number) {
@@ -2005,7 +2006,8 @@ async function reverseGeocodeGoogle(latitude: number, longitude: number) {
     return null;
   }
 
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${encodeURIComponent(key)}`;
+  const language = process.env.REVERSE_GEOCODE_LANGUAGE?.trim() || 'en';
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=${encodeURIComponent(language)}&key=${encodeURIComponent(key)}`;
 
   try {
     const response = await fetch(url);

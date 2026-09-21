@@ -50,8 +50,9 @@ ATTENDANCE_WEEKENDS_AUTO_PAUSED=true
 # true = approved exceptions can pause capture for affected users/dates.
 ATTENDANCE_EXCEPTIONS_AFFECT_CAPTURE=false
 
-# Reverse geocoding provider config (aligned with AttendanceApp env keys).
-REVERSE_GEOCODE_PROVIDER=nominatim
+# Reverse geocoding (default: Google). Nominatim and Mapbox remain optional switches.
+# Enable the Geocoding API on the Google Cloud project for this key.
+REVERSE_GEOCODE_PROVIDER=google
 REVERSE_GEOCODE_USER_AGENT=attendance-app
 REVERSE_GEOCODE_LANGUAGE=en
 MAPBOX_TOKEN=
