@@ -3,6 +3,7 @@ import multer from 'multer';
 import {
   importStaff,
   getAllStaff,
+  getStaffOptions,
   updateStaff,
   deleteStaff,
   excludeFromCycle,
@@ -22,6 +23,12 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Get staff statistics
 router.get('/stats', authenticate, getStaffStats);
+
+// Lightweight identity list for dropdowns / pickers (before /:id routes)
+router.get('/options', authenticate, getStaffOptions);
+
+// Get unique filter options
+router.get('/filters', authenticate, getStaffFilters);
 
 // Get all staff with optional filters
 router.get('/', authenticate, getAllStaff);
@@ -57,8 +64,5 @@ router.post(
   upload.single('file'),
   bulkImportSalaryData
 );
-
-// Get unique filter options
-router.get('/filters', authenticate, getStaffFilters);
 
 export default router;

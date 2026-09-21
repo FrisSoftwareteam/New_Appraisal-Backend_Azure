@@ -14,54 +14,115 @@ import {
   extractTrainingRecommendationSignals,
   getTrainingSignalMap
 } from '../services/training.service';
+import type { TrainingSignalMap } from '../services/training.service';
+
+/** Shared list filters for getAllStaff / getStaffOptions. */
+function buildStaffListQuery(req: Request): Record<string, unknown> {
+  const { search, department, division, grade } = req.query;
+  const query: Record<string, unknown> = {};
+
+  if (search && typeof search === 'string') {
+    query.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  if (department && department !== 'All Departments') {
+    query.department = department;
+  }
+
+  if (division && division !== 'All Divisions') {
+    query.division = division;
+  }
+
+  if (grade && grade !== 'All Grades') {
+    query.grade = grade;
+  }
+
+  if (req.query.role) {
+    query.role = req.query.role;
+  }
+
+  return query;
+}
+
+function flattenTrainingSignalIds(signalMap: TrainingSignalMap): string[] {
+  return [
+    ...signalMap.employee_need,
+    ...signalMap.appraiser_recommendation,
+    ...signalMap.action_recommended
+  ];
+}
+
+/** Keep only responses whose questionId is in the training-signal set. */
+function slimReviewResponsesExpression(reviewsPath: string, signalIds: string[]) {
+  return {
+    $map: {
+      input: { $ifNull: [reviewsPath, []] },
+      as: 'review',
+      in: {
+        responses: {
+          $filter: {
+            input: { $ifNull: ['$$review.responses', []] },
+            as: 'response',
+            cond: { $in: ['$$response.questionId', signalIds] }
+          }
+        }
+      }
+    }
+  };
+}
+
+// Lightweight staff list for dropdowns / pickers — identity fields only, no appraisals.
+export const getStaffOptions = async (req: Request, res: Response) => {
+  try {
+    const query = buildStaffListQuery(req);
+    const staff = await User.find(query)
+      .select('_id firstName lastName email department division grade role unit jobTitle avatar')
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+
+    res.status(200).json(staff);
+  } catch (error) {
+    console.error('Error fetching staff options:', error);
+    res.status(500).json({ message: 'Error fetching staff options' });
+  }
+};
 
 // Get all staff with optional filtering
 export const getAllStaff = async (req: Request, res: Response) => {
   try {
-    const { search, department, division, grade } = req.query;
-    
-    // Build query object
-    const query: any = {};
-    
-    // Search by name or email
-    if (search && typeof search === 'string') {
-      query.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
-      ];
-    }
-    
-    // Filter by department
-    if (department && department !== 'All Departments') {
-      query.department = department;
-    }
-    
-    // Filter by division
-    if (division && division !== 'All Divisions') {
-      query.division = division;
-    }
-    
-    // Filter by grade
-    if (grade && grade !== 'All Grades') {
-      query.grade = grade;
-    }
-
-    // Filter by role
-    if (req.query.role) {
-      query.role = req.query.role;
-    }
-    
+    const query = buildStaffListQuery(req);
     const staff = await User.find(query).select('-password').lean();
+
+    // Shared with the Training module and report exports so a template question-id
+    // change is picked up everywhere at once. Resolved before the aggregate so we
+    // can project appraisals down to only the responses those signals need.
+    const signalMap = await getTrainingSignalMap();
+    const signalIds = flattenTrainingSignalIds(signalMap);
 
     // Fetch latest appraisal per staff member. Doing the "latest per employee"
     // reduction in Mongo (rather than pulling every historical appraisal - full
     // nested reviews/history/adminEditedVersion documents - and reducing in JS)
     // avoids transferring the entire appraisal history for every listed employee
-    // just to read two response strings off the newest one.
+    // just to read two response strings off the newest one. The $project further
+    // strips each review down to training-signal question responses only.
     const staffIds = staff.map(s => s._id);
     const latestAppraisals = await Appraisal.aggregate([
       { $match: { employee: { $in: staffIds } } },
+      {
+        $project: {
+          employee: 1,
+          createdAt: 1,
+          period: 1,
+          reviews: slimReviewResponsesExpression('$reviews', signalIds),
+          adminEditedVersion: {
+            reviews: slimReviewResponsesExpression('$adminEditedVersion.reviews', signalIds)
+          }
+        }
+      },
       { $sort: { employee: 1, createdAt: -1 } },
       {
         $group: {
@@ -79,10 +140,6 @@ export const getAllStaff = async (req: Request, res: Response) => {
     latestAppraisals.forEach(app => {
       appraisalMap.set(String(app._id), app);
     });
-
-    // Shared with the Training module and report exports so a template question-id
-    // change is picked up everywhere at once.
-    const signalMap = await getTrainingSignalMap();
 
     const staffWithTraining = staff.map((member: any) => {
       const app = appraisalMap.get(String(member._id));
